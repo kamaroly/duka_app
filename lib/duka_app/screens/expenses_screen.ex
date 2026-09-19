@@ -120,17 +120,13 @@ defmodule DukaApp.Screens.ExpensesScreen do
 
   @impl Mob.Screen
   def handle_info({:tap, "item-" <> id}, socket) do
-    require Logger
-    Mob.Alert.toast(socket, "You tapped item #{id}")
 
     selected_item =
       get_items()
       |> Enum.filter(&(&1.id == String.to_integer(id)))
       |> List.first()
 
-    Logger.info("=====DEBUGING==============")
-    Logger.info(selected_item)
-    Logger.info("=====DEBUGING==============")
+
 
     {:noreply,
      socket
