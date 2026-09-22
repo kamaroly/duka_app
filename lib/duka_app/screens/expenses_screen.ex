@@ -21,7 +21,7 @@ defmodule DukaApp.Screens.ExpensesScreen do
           background={0xFFFFFFFF}
           text_color={:on_surface}
           border_color={0xFFFFFFFF}
-          padding={1}
+          padding={:space_xs}
           corner_radius={:radius_pill}
           on_change={search_change}
         />

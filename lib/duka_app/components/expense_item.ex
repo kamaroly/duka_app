@@ -25,7 +25,7 @@ defmodule DukaApp.Components.ExpenseItem do
           </Row>
           <Row fill_width={true}>
             <Text text={item.category} text_size={:xs} text_color={:muted} max_lines={1} weight={1} />
-            <Text text={item.date} text_size={:xs} text_color={:muted} />
+            <Text text={to_string(item.date)} text_size={:xs} text_color={:muted} />
           </Row>
         </Column>
       </Row>
