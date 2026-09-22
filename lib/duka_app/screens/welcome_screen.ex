@@ -72,10 +72,10 @@ defmodule DukaApp.Screens.WelcomeScreen do
       />
       <Spacer size={16} />
       <Button
-        text="Show Action Sheet"
+        text="Scan Receipt"
         text_color={:on_primary}
         text_size={:lg}
-        on_tap={{self(), :show_action_sheet}}
+        on_tap={{self(), :scan_receipt}}
         padding={:xs}
       />
     </Column>
@@ -105,16 +105,18 @@ defmodule DukaApp.Screens.WelcomeScreen do
   end
 
   @impl Mob.Screen
-  def handle_info({:tap, :show_action_sheet}, socket) do
-    Mob.Alert.alert(socket,
-      title: "Delete item?",
-      message: "This cannot be undone.",
-      buttons: [
-        [label: "Delete", style: :destructive, action: :confirmed_delete],
-        [label: "Cancel", style: :cancel]
-      ]
-    )
+  def handle_info({:tap, :scan_receipt}, socket) do
+    {:ok, MobScanner.scan(socket)}
+  end
 
+  @impl Mob.Screen
+  def handle_info({:scan, :result, %{type: type, value: value}}, socket) do
+    # type: :qr | :ean | :upc | etc.
+    {:noreply, Mob.Socket.assign(socket, :scanned, value)}
+  end
+
+  @impl Mob.Screen
+  def handle_info({:scan, :cancelled}, socket) do
     {:noreply, socket}
   end
 end

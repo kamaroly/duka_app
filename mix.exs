@@ -32,6 +32,7 @@ defmodule DukaApp.MixProject do
       {:mob_location, "~> 0.1"},
       {:mob_biometric, "~> 0.1"},
       {:mob_themes, "~> 0.1"},
+      {:mob_scanner, "~> 0.1"},
       # Code quality — Credo + ex_slop (catches AI-generated patterns
       # like blanket rescue, narrator docs, redundant Enum chains, etc).
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

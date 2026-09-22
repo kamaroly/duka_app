@@ -13,18 +13,18 @@ defmodule DukaApp.Screens.ExpensesScreen do
 
     ~MOB"""
     <Column padding={8} background={:white}>
-        <TextField
-          id="expense-search"
-          value={@query}
-          placeholder="Search"
-          fill_width={true}
-          background={0xFFFFFFFF}
-          text_color={:on_surface}
-          border_color={0xFFFFFFFF}
-          padding={:space_xs}
-          corner_radius={:radius_pill}
-          on_change={search_change}
-        />
+      <TextField
+        id="expense-search"
+        value={@query}
+        placeholder="Search"
+        fill_width={true}
+        background={0xFFFFFFFF}
+        text_color={:on_surface}
+        border_color={0xFFFFFFFF}
+        padding={:space_xs}
+        corner_radius={:radius_pill}
+        on_change={search_change}
+      />
       <List id={:expenses} items={@items} />
       <ExpenseDetailSheet
         item={@selected_item}

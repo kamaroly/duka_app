@@ -10,3 +10,4 @@ config :duka_app, ecto_repos: [DukaApp.Repo]
 config :mob, :repo, DukaApp.Repo
 
 config :mob, :extra_tags, ~w(ExpenseItem ExpenseDetailSheet)
+config :mob, :plugins, [:mob_camera, :mob_scanner]
