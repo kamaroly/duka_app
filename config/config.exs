@@ -8,3 +8,5 @@ config :duka_app, ecto_repos: [DukaApp.Repo]
 # Wire the Repo into Mob.ScreenState so screens using `vsn:` get automatic
 # state persistence. Remove this line to disable screen state persistence.
 config :mob, :repo, DukaApp.Repo
+
+config :mob, :extra_tags, ~w(ExpenseItem ExpenseDetailSheet)

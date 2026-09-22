@@ -37,7 +37,7 @@ defmodule DukaApp.Screens.WelcomeScreen do
   end
 
   @impl Mob.Screen
-  def render(assigns) do
+  def render(_assigns) do
     # Event handlers for the two buttons
     inventory_button_tap = {self(), :goto_inventory}
     profile_button_tap = {self(), :goto_profile}
@@ -70,6 +70,14 @@ defmodule DukaApp.Screens.WelcomeScreen do
         on_tap={{self(), :goto_expenses}}
         padding={:xs}
       />
+      <Spacer size={16} />
+      <Button
+        text="Show Action Sheet"
+        text_color={:on_primary}
+        text_size={:lg}
+        on_tap={{self(), :show_action_sheet}}
+        padding={:xs}
+      />
     </Column>
     """
   end
@@ -94,5 +102,19 @@ defmodule DukaApp.Screens.WelcomeScreen do
   @impl Mob.Screen
   def handle_info({:tap, :goto_expenses}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, DukaApp.Screens.ExpensesScreen)}
+  end
+
+  @impl Mob.Screen
+  def handle_info({:tap, :show_action_sheet}, socket) do
+    Mob.Alert.alert(socket,
+      title: "Delete item?",
+      message: "This cannot be undone.",
+      buttons: [
+        [label: "Delete", style: :destructive, action: :confirmed_delete],
+        [label: "Cancel", style: :cancel]
+      ]
+    )
+
+    {:noreply, socket}
   end
 end

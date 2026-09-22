@@ -36,6 +36,14 @@ defmodule DukaApp.App do
 
     Mob.Screen.start_root(DukaApp.Screens.WelcomeScreen)
     Mob.Dist.ensure_started(node: :"duka_app_android@127.0.0.1", cookie: :mob_secret)
+
+    # Register custom components
+    Mob.Composite.register(:expense_item, {DukaApp.Components.ExpenseItem, :expand})
+
+    Mob.Composite.register(
+      :expense_detail_sheet,
+      {DukaApp.Components.ExpenseDetailSheet, :expand}
+    )
   end
 
   # Returns the path to the migrations directory for the current environment.
