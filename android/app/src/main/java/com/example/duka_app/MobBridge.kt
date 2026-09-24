@@ -3251,6 +3251,7 @@ private fun MobText(node: MobNode, modifier: Modifier) {
     val letterSpacing = floatProp(node.props, "letter_spacing")
     val lineHeightMul = floatProp(node.props, "line_height")
     val fontFamily    = fontFamilyProp(node.props, LocalContext.current)
+    val maxLines      = intProp(node.props, "max_lines")?.takeIf { it > 0 }
     val resolvedLineHeight = if (lineHeightMul != null && fontSize != TextUnit.Unspecified)
         (lineHeightMul * fontSize.value).sp else TextUnit.Unspecified
 
@@ -3291,6 +3292,8 @@ private fun MobText(node: MobNode, modifier: Modifier) {
         lineHeight    = resolvedLineHeight,
         letterSpacing = letterSpacing?.sp ?: TextUnit.Unspecified,
         fontFamily    = fontFamily,
+        maxLines      = maxLines ?: Int.MAX_VALUE,
+        overflow      = if (maxLines != null) TextOverflow.Ellipsis else TextOverflow.Clip,
     )
 }
 

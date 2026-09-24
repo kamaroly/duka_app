@@ -121,7 +121,7 @@ defmodule DukaApp.ReceiptsTest do
     assert Enum.sort(vendors.(:food)) == ["Java", "Naivas"]
     assert Enum.sort(vendors.(:fuel)) == ["Matatu", "Shell"]
     assert vendors.(:other) == ["Landlord"]
-    assert length(vendors.(:all)) == 5
+    assert [_, _, _, _, _] = vendors.(:all)
     assert Receipts.list_receipts(profile, "shell", :food) == []
 
     assert Receipts.summary(profile).month_by_group == %{food: 159_500, fuel: 210_000, other: 0}

@@ -1,13 +1,15 @@
 defmodule DukaApp.Native do
   @moduledoc """
   The native calls screens make: camera, QR scanner, receipt OCR, toasts and
-  haptics.
+  haptics — plus the one network call, the KRA receipt lookup.
 
   They go straight to the phone's native layer, which does not exist under
   `mix test`. With `config :duka_app, :native, false` each call instead sends
   `{:native, name, args}` to the calling process, so a screen test can assert
   what the screen asked the phone to do and then feed back the reply message.
   """
+
+  alias DukaApp.Receipts.KraReceipt
 
   @spec toast(Mob.Socket.t(), String.t()) :: Mob.Socket.t()
   def toast(socket, message), do: call(socket, :toast, [message], &Mob.Alert.toast(&1, message))
@@ -34,6 +36,23 @@ defmodule DukaApp.Native do
   def process_photo(socket, source, dest) do
     call(socket, :process_photo, [source, dest], &MobOcr.process(&1, source, save_to: dest))
   end
+
+  @doc """
+  Looks the receipt up on KRA's verification page in the background.
+  Replies `{:kra, :result, details}` (see `DukaApp.Receipts.KraReceipt`) or
+  `{:kra, :error, reason}`.
+  """
+  @spec lookup_kra(Mob.Socket.t(), String.t()) :: Mob.Socket.t()
+  def lookup_kra(socket, url) do
+    call(socket, :lookup_kra, [url], fn socket ->
+      screen = self()
+      Task.start(fn -> send(screen, kra_reply(KraReceipt.fetch(url))) end)
+      socket
+    end)
+  end
+
+  defp kra_reply({:ok, details}), do: {:kra, :result, details}
+  defp kra_reply({:error, reason}), do: {:kra, :error, reason}
 
   defp call(socket, name, args, native) do
     if Application.get_env(:duka_app, :native, true) do

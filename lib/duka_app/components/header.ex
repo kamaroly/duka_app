@@ -4,9 +4,9 @@ defmodule DukaApp.Components.Header do
   optional square icon buttons for going back and for one action on the right.
 
   Props: `title`, `kicker` (small line above the title), `subtitle` (small
-  line below it), `show_back`, `right_icon` (a Mob icon name such as
-  `"settings"`) and `right_label` (its accessibility label). Taps arrive as
-  `{:tap, :header_back}` and `{:tap, :header_right}`.
+  line below it), `show_back`, and `actions`: the right-hand buttons as
+  `{icon, accessibility_label, tag}`, e.g. `{"settings", "Settings",
+  :open_settings}`. Taps arrive as `{:tap, :header_back}` and `{:tap, tag}`.
   """
 
   import Mob.Sigil
@@ -17,8 +17,12 @@ defmodule DukaApp.Components.Header do
     kicker = Map.get(props, :kicker)
     subtitle = Map.get(props, :subtitle)
     show_back = Map.get(props, :show_back, false)
-    right_icon = Map.get(props, :right_icon)
-    right_label = Map.get(props, :right_label, right_icon)
+
+    actions =
+      props
+      |> Map.get(:actions, [])
+      |> Enum.map(fn {icon, label, tag} -> icon_button(icon, label, {self(), tag}) end)
+      |> Enum.intersperse(~MOB(<Spacer size={8} />))
 
     ~MOB"""
     <Row
@@ -48,7 +52,7 @@ defmodule DukaApp.Components.Header do
         />
         <Text :if={present?(subtitle)} text={subtitle} text_size={13} text_color={:muted} />
       </Column>
-      {if right_icon, do: icon_button(right_icon, right_label, {self(), :header_right})}
+      {actions}
     </Row>
     """
   end

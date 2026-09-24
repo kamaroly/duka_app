@@ -4,6 +4,8 @@ defmodule DukaApp.App do
   # Automatically adjusts to system light/dark settings
   use Mob.App, theme: DukaApp.Theme.Adaptive
 
+  require Logger
+
   alias DukaApp.Screens.{PhoneScreen, ReceiptsScreen}
 
   @impl Mob.App
@@ -27,11 +29,19 @@ defmodule DukaApp.App do
     # resolver, Quad9, etc.) — see `Mob.DNS.configure_pure_beam/1`.
     Mob.DNS.configure_pure_beam()
 
+    # Android has no CA store the BEAM can read, so HTTPS (the KRA receipt
+    # lookup) verifies against this bundled copy of the Mozilla trust store.
+    # See Mob.Certs. The app works offline without it, so a failure only
+    # costs the lookup rather than stopping the app from starting.
+    with {:error, reason} <- Mob.Certs.load_cacerts(priv_path("cacerts.pem")) do
+      Logger.warning("CA certificates not loaded, KRA lookups will fail: #{inspect(reason)}")
+    end
+
     {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
     {:ok, _} = DukaApp.Repo.start_link()
 
     Ecto.Migrator.with_repo(DukaApp.Repo, fn repo ->
-      Ecto.Migrator.run(repo, migrations_dir(), :up, all: true)
+      Ecto.Migrator.run(repo, priv_path("repo/migrations"), :up, all: true)
     end)
 
     # After Repo/Mob.State are up and before the first screen renders, so the
@@ -45,7 +55,8 @@ defmodule DukaApp.App do
     Mob.Dist.ensure_started(node: :"duka_app_android@127.0.0.1", cookie: :mob_secret)
   end
 
-  # Returns the path to the migrations directory for the current environment.
+  # Returns the path to a file or directory under priv/ for the current
+  # environment.
   #
   # WHY NOT Application.app_dir/2?
   #
@@ -64,10 +75,10 @@ defmodule DukaApp.App do
   # (mkdir-as-root creates system:system drwxrwx--x dirs that the app process
   # can traverse but not list, breaking Path.wildcard). Here we read MOB_BEAMS_DIR
   # and pass the explicit path to Ecto.Migrator.run/4.
-  defp migrations_dir do
+  defp priv_path(relative) do
     case System.get_env("MOB_BEAMS_DIR") do
-      nil -> Application.app_dir(:duka_app, "priv/repo/migrations")
-      beams_dir -> Path.join([beams_dir, "priv", "repo", "migrations"])
+      nil -> Application.app_dir(:duka_app, Path.join("priv", relative))
+      beams_dir -> Path.join([beams_dir, "priv", relative])
     end
   end
 end

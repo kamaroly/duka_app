@@ -11,8 +11,12 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
     * `%{}` — enter a receipt by hand.
 
   A photo can be added, retaken or removed from any of these, and a QR code
-  scanned when the photo didn't contain a readable one. Text read off a photo
-  only fills fields the user hasn't typed in.
+  scanned when the photo didn't contain a readable one.
+
+  A KRA (eTIMS or TIMS) QR code links to KRA's record of the receipt; the
+  form fetches it in the background and fills the vendor, date, total and
+  items from it. Details from KRA or read off a photo only fill fields the
+  user hasn't typed in, and a photo read never overwrites what KRA said.
   """
 
   use Mob.Screen
@@ -53,6 +57,8 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
       |> Mob.Socket.assign(:amount, Receipts.amount_input(receipt.amount_cents))
       |> Mob.Socket.assign(:category, receipt.category)
       |> Mob.Socket.assign(:touched, MapSet.new())
+      # Fields filled from KRA's record, which a photo read must not overwrite.
+      |> Mob.Socket.assign(:from_kra, MapSet.new())
       |> Mob.Socket.assign(:reading, false)
       |> Mob.Socket.assign(:notice, nil)
       |> Mob.Socket.assign(:pending_camera, nil)
@@ -62,6 +68,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
     socket =
       case params do
         %{photo: tmp} -> read_photo(socket, tmp)
+        %{qr: _} -> lookup_kra(socket)
         _ -> socket
       end
 
@@ -319,10 +326,15 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
             invoice_number: r.invoice_number || fields.invoice_number
         }
       end)
-      |> fill_untouched(fields)
+      |> fill_untouched(fields, socket.assigns.from_kra)
       |> Mob.Socket.assign(:reading, false)
 
-    {:noreply, Mob.Socket.assign(socket, :notice, ocr_notice(fields, socket.assigns))}
+    notice =
+      if socket.assigns.from_kra == MapSet.new(),
+        do: ocr_notice(fields, socket.assigns),
+        else: socket.assigns.notice
+
+    {:noreply, Mob.Socket.assign(socket, :notice, notice)}
   end
 
   def handle_info({:ocr, :error, json}, socket) do
@@ -350,10 +362,39 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
     socket =
       socket
       |> attach_qr(value)
-      |> fill_untouched(%{date: parsed.date, amount_cents: parsed.amount_cents, vendor: nil})
+      |> fill_untouched(parsed, socket.assigns.from_kra)
       |> Native.success()
 
     {:noreply, socket}
+  end
+
+  def handle_info({:kra, :result, details}, socket) do
+    filled =
+      [date: :date, vendor: :vendor, amount: :amount_cents, description: :description]
+      |> Enum.filter(fn {_field, key} -> details[key] end)
+      |> Enum.map(&elem(&1, 0))
+      |> Enum.reject(&MapSet.member?(socket.assigns.touched, &1))
+
+    socket =
+      socket
+      |> fill_untouched(details, MapSet.new())
+      |> Mob.Socket.assign(:from_kra, MapSet.union(socket.assigns.from_kra, MapSet.new(filled)))
+      |> Mob.Socket.assign(
+        :notice,
+        "Filled in from KRA's record of this receipt. Check the details and pick a category."
+      )
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:kra, :error, _reason}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(
+       :notice,
+       "Couldn't get this receipt from KRA — check your internet connection. " <>
+         "Fill in the details from the paper receipt."
+     )}
   end
 
   def handle_info({:tap, :remove_photo}, socket) do
@@ -479,6 +520,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
         socket
         |> Mob.Socket.assign(:receipt, Receipts.put_qr(receipt, qr))
         |> duplicate_check()
+        |> lookup_kra()
 
       _ ->
         socket
@@ -486,6 +528,17 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
   end
 
   defp attach_qr(socket, _qr), do: socket
+
+  # Only eTIMS and TIMS links lead to a page with the receipt on it, and
+  # QrParser only sets verify_url for links on a KRA host.
+  defp lookup_kra(%{assigns: %{receipt: %Receipt{source: source, verify_url: url}}} = socket)
+       when source in ["etims", "tims"] and is_binary(url) do
+    socket
+    |> Mob.Socket.assign(:notice, "Getting this receipt's details from KRA…")
+    |> Native.lookup_kra(url)
+  end
+
+  defp lookup_kra(socket), do: socket
 
   # Warns (the unique index will refuse the save anyway) when this QR code
   # is already on another saved receipt.
@@ -507,21 +560,28 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
     end
   end
 
-  # Values read off the photo or QR fill a field only if the user hasn't
-  # typed in it — never overwrite what they entered.
-  defp fill_untouched(socket, fields) do
+  # Values from KRA, the photo or the QR code fill a field only if the user
+  # hasn't typed in it — never overwrite what they entered — nor is it one
+  # of the `protected` fields.
+  defp fill_untouched(socket, fields, protected) do
+    date = fields[:date]
+    cents = fields[:amount_cents]
+
     candidates = [
-      date: fields.date && Date.to_iso8601(fields.date),
-      vendor: fields.vendor,
-      amount: fields.amount_cents && Receipts.amount_input(fields.amount_cents)
+      date: date && Date.to_iso8601(date),
+      vendor: fields[:vendor],
+      description: fields[:description],
+      amount: cents && Receipts.amount_input(cents)
     ]
+
+    skip = MapSet.union(socket.assigns.touched, protected)
 
     Enum.reduce(candidates, socket, fn
       {_key, nil}, acc ->
         acc
 
       {key, value}, acc ->
-        if MapSet.member?(acc.assigns.touched, key),
+        if MapSet.member?(skip, key),
           do: acc,
           else: Mob.Socket.assign(acc, key, value)
     end)

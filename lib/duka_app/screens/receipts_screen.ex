@@ -14,6 +14,10 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   alias DukaApp.Components.ReceiptItem
   alias DukaApp.Screens.{PhoneScreen, ReceiptFormScreen, SettingsScreen}
 
+  # The month picker offers this many months back from today.
+  @months 12
+  @month_actions Map.new(0..(@months - 1), &{:"month_#{&1}", &1})
+
   @impl Mob.Screen
   def mount(_params, _session, socket) do
     profile = Accounts.current_profile()
@@ -23,6 +27,8 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       |> Mob.Socket.assign(:profile, profile)
       |> Mob.Socket.assign(:query, "")
       |> Mob.Socket.assign(:group, :all)
+      |> Mob.Socket.assign(:searching, false)
+      |> Mob.Socket.assign(:month, Date.beginning_of_month(Receipts.today()))
       |> Mob.Socket.assign(:selected, nil)
       |> Mob.Socket.assign(:pending_camera, nil)
       |> Mob.Socket.assign(:locked, profile != nil and profile.app_lock)
@@ -65,14 +71,13 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       <Header
         kicker={Calendar.strftime(Receipts.today(), "%A, %d %b")}
         title={greeting(@profile)}
-        right_icon="settings"
-        right_label="Settings"
+        actions={[search_action(@searching), {"settings", "Settings", :open_settings}]}
       />
       <Column fill_width={true} padding_left={18} padding_right={18}>
-        {spend_card(@summary)}
+        <SearchField :if={@searching} query={@query} on_change={{self(), :search}} />
+        <Spacer :if={@searching} size={14} />
+        {spend_card(@summary, @month)}
         <Spacer size={14} />
-        <SearchField query={@query} on_change={{self(), :search}} />
-        <Spacer size={12} />
       </Column>
       {chips(@group, @summary.count)}
       <Spacer size={14} />
@@ -115,14 +120,18 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     """
   end
 
-  # The dark card: this month's spend, split three ways.
-  defp spend_card(summary) do
+  defp search_action(false), do: {"search", "Search receipts", :toggle_search}
+  defp search_action(true), do: {"close", "Close search", :toggle_search}
+
+  # The dark card: the chosen month's spend, split three ways. The month pill
+  # opens the month picker.
+  defp spend_card(summary, month) do
     ~MOB"""
     <Box background={Theme.color(:spend_card)} corner_radius={24} padding={20} fill_width={true}>
       <Column fill_width={true}>
         <Row fill_width={true} align={:center}>
           <Text
-            text="Spent this month"
+            text={spent_label(month)}
             text_size={13}
             text_color={Theme.color(:spend_muted)}
             weight={1}
@@ -131,16 +140,22 @@ defmodule DukaApp.Screens.ReceiptsScreen do
             background={Theme.color(:spend_chip)}
             corner_radius={:radius_pill}
             padding_left={10}
-            padding_right={10}
+            padding_right={6}
             padding_top={5}
             padding_bottom={5}
+            align={:center}
+            on_tap={{self(), :pick_month}}
+            accessibility_label={"Month: #{month_label(month)}. Change month"}
+            accessibility_role={:button}
           >
             <Text
-              text={Calendar.strftime(Receipts.today(), "%B")}
+              text={month_label(month)}
               text_size={13}
               font_weight="medium"
               text_color={Theme.color(:spend_text)}
             />
+            <Spacer size={2} />
+            <Icon name="expand_more" text_size={16} text_color={Theme.color(:spend_text)} />
           </Row>
         </Row>
         <Spacer size={10} />
@@ -440,7 +455,41 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     {:noreply, Mob.Socket.push_screen(socket, ReceiptFormScreen, %{})}
   end
 
-  def handle_info({:tap, :header_right}, socket) do
+  def handle_info({:tap, :toggle_search}, %{assigns: %{searching: true}} = socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(searching: false, query: "")
+     |> load_receipts()}
+  end
+
+  def handle_info({:tap, :toggle_search}, socket) do
+    {:noreply, Mob.Socket.assign(socket, :searching, true)}
+  end
+
+  def handle_info({:tap, :pick_month}, socket) do
+    buttons =
+      @months
+      |> Receipts.recent_months()
+      |> Enum.with_index()
+      |> Enum.map(fn {month, i} -> [label: month_label(month, :long), action: :"month_#{i}"] end)
+
+    {:noreply,
+     Mob.Alert.action_sheet(socket,
+       title: "Show spending for",
+       buttons: buttons ++ [[label: "Cancel", style: :cancel]]
+     )}
+  end
+
+  def handle_info({:alert, action}, socket) when is_map_key(@month_actions, action) do
+    month = Enum.at(Receipts.recent_months(@months), Map.fetch!(@month_actions, action))
+
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:month, month)
+     |> load_receipts()}
+  end
+
+  def handle_info({:tap, :open_settings}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, SettingsScreen)}
   end
 
@@ -483,15 +532,30 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   end
 
   defp load_receipts(socket) do
-    %{profile: profile, query: query, group: group} = socket.assigns
+    %{profile: profile, query: query, group: group, month: month} = socket.assigns
 
     socket
     |> Mob.Socket.assign(:receipts, Receipts.list_receipts(profile, query, group))
-    |> Mob.Socket.assign(:summary, Receipts.summary(profile))
+    |> Mob.Socket.assign(:summary, Receipts.summary(profile, month))
   end
 
   defp greeting(%{name: name}) when is_binary(name) and name != "", do: "Hi, #{name}"
   defp greeting(_profile), do: "Your receipts"
+
+  defp spent_label(month) do
+    if month == Date.beginning_of_month(Receipts.today()),
+      do: "Spent this month",
+      else: "Spent in #{month_label(month, :long)}"
+  end
+
+  # "September" this year, "Sep 2025" before it; `:long` always has the year.
+  defp month_label(month, style \\ :short) do
+    cond do
+      style == :long -> Calendar.strftime(month, "%B %Y")
+      month.year == Receipts.today().year -> Calendar.strftime(month, "%B")
+      true -> Calendar.strftime(month, "%b %Y")
+    end
+  end
 
   defp list_title(:all), do: "All receipts"
   defp list_title(group), do: Receipts.group_label(group)

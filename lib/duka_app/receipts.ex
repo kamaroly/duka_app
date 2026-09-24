@@ -164,28 +164,43 @@ defmodule DukaApp.Receipts do
   end
 
   @doc """
-  Receipt count, all-time total, this month's total and this month's total per
-  spending group, in cents.
+  Receipt count and all-time total, plus the total for `month` (any date in
+  it; this month by default) overall and per spending group, in cents.
   """
-  @spec summary(Profile.t()) :: %{
+  @spec summary(Profile.t(), Date.t()) :: %{
           count: integer(),
           total: integer(),
           month_total: integer(),
           month_by_group: %{group() => integer()}
         }
-  def summary(%Profile{id: profile_id} = profile) do
-    month_start = Date.beginning_of_month(today())
+  def summary(%Profile{id: profile_id} = profile, month \\ today()) do
+    month_start = Date.beginning_of_month(month)
+    month_end = Date.end_of_month(month)
 
     profile_id
-    |> totals(month_start)
-    |> Map.put(:month_by_group, month_by_group(profile, month_start))
+    |> totals(month_start, month_end)
+    |> Map.put(:month_by_group, month_by_group(profile, month_start, month_end))
   end
 
-  defp month_by_group(%Profile{id: profile_id}, month_start) do
+  @doc """
+  The first day of each of the last `count` months, newest first.
+
+      iex> DukaApp.Receipts.recent_months(~D[2026-02-14], 3)
+      [~D[2026-02-01], ~D[2026-01-01], ~D[2025-12-01]]
+  """
+  @spec recent_months(Date.t(), pos_integer()) :: [Date.t()]
+  def recent_months(today \\ today(), count) do
+    today
+    |> Date.beginning_of_month()
+    |> Stream.iterate(&Date.beginning_of_month(Date.add(&1, -1)))
+    |> Enum.take(count)
+  end
+
+  defp month_by_group(%Profile{id: profile_id}, month_start, month_end) do
     empty = Map.new(groups(), &{&1, 0})
 
     from(r in Receipt,
-      where: r.profile_id == ^profile_id and r.date >= ^month_start,
+      where: r.profile_id == ^profile_id and r.date >= ^month_start and r.date <= ^month_end,
       group_by: r.category,
       select: {r.category, sum(r.amount_cents)}
     )
@@ -195,7 +210,7 @@ defmodule DukaApp.Receipts do
     end)
   end
 
-  defp totals(profile_id, month_start) do
+  defp totals(profile_id, month_start, month_end) do
     Repo.one(
       from r in Receipt,
         where: r.profile_id == ^profile_id,
@@ -206,9 +221,10 @@ defmodule DukaApp.Receipts do
             coalesce(
               sum(
                 fragment(
-                  "CASE WHEN ? >= ? THEN ? ELSE 0 END",
+                  "CASE WHEN ? BETWEEN ? AND ? THEN ? ELSE 0 END",
                   r.date,
                   ^month_start,
+                  ^month_end,
                   r.amount_cents
                 )
               ),

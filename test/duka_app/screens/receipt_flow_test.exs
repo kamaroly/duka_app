@@ -95,7 +95,63 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
       assert text(view) =~ "No other receipts yet."
 
       view = render_info(view, {:tap, {:group, :all}})
-      assert length(assigns(view).receipts) == 2
+      assert [_, _] = assigns(view).receipts
+    end
+
+    test "the search button shows the search box and closing it clears the search", %{
+      profile: profile
+    } do
+      for vendor <- ["Naivas", "Shell"] do
+        {:ok, _} =
+          Receipts.create_receipt(profile, Receipts.new_manual(), %{
+            date: Receipts.today(),
+            vendor: vendor,
+            amount_cents: 1_000,
+            category: "Other"
+          })
+      end
+
+      view = mount_screen(ReceiptsScreen)
+      refute text(view) =~ "Search receipts"
+
+      view = render_info(view, {:tap, :toggle_search})
+      assert assigns(view).searching
+      assert_renderable(view, extra: @extra)
+
+      view = render_info(view, {:change, :search, "shell"})
+      assert Enum.map(assigns(view).receipts, & &1.vendor) == ["Shell"]
+
+      view = render_info(view, {:tap, :toggle_search})
+      assert %{searching: false, query: ""} = assigns(view)
+      assert [_, _] = assigns(view).receipts
+    end
+
+    test "the month pill picks which month the card totals", %{profile: profile} do
+      [this_month, last_month | _] = Receipts.recent_months(12)
+
+      for {date, cents} <- [{Receipts.today(), 1_000}, {Date.add(last_month, 3), 7_000}] do
+        {:ok, _} =
+          Receipts.create_receipt(profile, Receipts.new_manual(), %{
+            date: date,
+            vendor: "Shop",
+            amount_cents: cents,
+            category: "Fuel"
+          })
+      end
+
+      view = mount_screen(ReceiptsScreen)
+      assert assigns(view).summary.month_total == 1_000
+      assert text(view) =~ "Spent this month"
+
+      view = render_info(view, {:alert, :month_1})
+      assert assigns(view).month == last_month
+      assert assigns(view).summary.month_total == 7_000
+      assert assigns(view).summary.month_by_group.fuel == 7_000
+      assert text(view) =~ "Spent in #{Calendar.strftime(last_month, "%B %Y")}"
+      assert_renderable(view, extra: @extra)
+
+      view = render_info(view, {:alert, :month_0})
+      assert assigns(view).month == this_month
     end
 
     test "a new scan opens the confirm form with the QR details" do

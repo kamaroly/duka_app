@@ -46,6 +46,74 @@ defmodule DukaApp.Screens.PhotoFlowTest do
     assert nav_action(view) == {:push, ReceiptFormScreen, %{photo: "/cache/mob_cam_1.jpg"}}
   end
 
+  describe "KRA lookup" do
+    @kra_details %{
+      vendor: "Stabex International Limited",
+      date: ~D[2026-09-20],
+      amount_cents: 199_845,
+      description: "Unleaded",
+      invoice_number: "KRACU0300010612/58385"
+    }
+
+    test "a scanned eTIMS code fills the form from KRA's record" do
+      view = mount_screen(ReceiptFormScreen, %{qr: @etims})
+      assert_received {:native, :lookup_kra, [@etims]}
+      assert assigns(view).notice =~ "from KRA"
+
+      view = render_info(view, {:kra, :result, @kra_details})
+
+      assert %{
+               vendor: "Stabex International Limited",
+               date: "2026-09-20",
+               amount: "1998.45",
+               description: "Unleaded"
+             } = assigns(view)
+
+      assert assigns(view).notice =~ "Filled in from KRA"
+    end
+
+    test "KRA doesn't overwrite what the user typed, and a later photo doesn't overwrite KRA" do
+      view =
+        ReceiptFormScreen
+        |> mount_screen(%{qr: @etims})
+        |> render_info({:change, :vendor, "Stabex Karen"})
+        |> render_info({:kra, :result, @kra_details})
+
+      assert assigns(view).vendor == "Stabex Karen"
+      assert assigns(view).amount == "1998.45"
+
+      view = render_info(view, {:tap, :take_photo})
+      view = render_info(view, {:permission, :camera, :granted})
+      view = render_info(view, {:camera, :photo, %{path: "/cache/mob_cam_3.jpg"}})
+      assert_received {:native, :process_photo, [_, dest]}
+
+      view = render_info(view, ocr_reply(dest, @ocr_text))
+      assert assigns(view).amount == "1998.45"
+      assert assigns(view).date == "2026-09-20"
+    end
+
+    test "a failed lookup says so and leaves the form to the user" do
+      view =
+        ReceiptFormScreen
+        |> mount_screen(%{qr: @etims})
+        |> render_info({:kra, :error, :timeout})
+
+      assert assigns(view).notice =~ "Couldn't get this receipt from KRA"
+      assert assigns(view).vendor == ""
+    end
+
+    test "a QR code found in a photo is looked up too" do
+      {view, dest} = start_photo_form()
+      render_info(view, ocr_reply(dest, @ocr_text, @etims))
+      assert_received {:native, :lookup_kra, [@etims]}
+    end
+
+    test "a QR code that isn't a KRA link is not looked up" do
+      mount_screen(ReceiptFormScreen, %{qr: "https://l.ead.me/beUwqW"})
+      refute_received {:native, :lookup_kra, _}
+    end
+  end
+
   test "Scan QR only still opens the QR scanner" do
     ReceiptsScreen
     |> mount_screen()
