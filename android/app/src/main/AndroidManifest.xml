@@ -60,8 +60,6 @@
 
     <!-- mob:plugin-permissions BEGIN (managed — regenerated each build; do not edit) -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- mob:plugin-permissions END -->
     <application
         android:label="DukaApp"
@@ -82,8 +80,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-    <!-- The QR-scanner <activity> moved to the mob_scanner plugin
-         (io.mob.scanner.MobScannerActivity; see its host_requirements). -->
+        <!-- Full-screen QR scanner from the mob_scanner plugin (class ships in
+             io/mob/scanner/MobScannerBridge.kt). The plugin can't add this
+             itself; without it the first scan throws ActivityNotFoundException.
+             Needs an AppCompat theme: CameraX + ML Kit call setContentView on
+             an AppCompatActivity. -->
+        <activity android:name="io.mob.scanner.MobScannerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
 
         <!-- Scheduled local notification delivery -->
         <receiver android:name=".NotificationReceiver"

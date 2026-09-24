@@ -205,6 +205,15 @@ class MainActivity : ComponentActivity() {
                     surfaceVariant   = colorFromMap(tc, "surface_raised",   0xFF49454F),
                     onSurfaceVariant = colorFromMap(tc, "muted",            0xFFCAC4D0),
                     outline          = colorFromMap(tc, "border",           0xFF938F99),
+                    outlineVariant   = colorFromMap(tc, "border",           0xFF49454F),
+                    // Text fields, sheets and menus fill with the surfaceContainer
+                    // family; left unset they keep Material's stock dark greys even
+                    // under a light Mob theme.
+                    surfaceContainerLowest  = colorFromMap(tc, "surface",        0xFF0F0D13),
+                    surfaceContainerLow     = colorFromMap(tc, "surface",        0xFF1D1B20),
+                    surfaceContainer        = colorFromMap(tc, "surface",        0xFF211F26),
+                    surfaceContainerHigh    = colorFromMap(tc, "surface_raised", 0xFF2B2930),
+                    surfaceContainerHighest = colorFromMap(tc, "surface_raised", 0xFF36343B),
                     error            = colorFromMap(tc, "error",            0xFFF2B8B5),
                     onError          = colorFromMap(tc, "on_error",         0xFFFFFFFF),
                 )

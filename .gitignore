@@ -27,3 +27,7 @@ _build/mob_release/
 
 # macOS
 .DS_Store
+
+# Local SQLite databases
+/priv/repo/*.db*
+/priv/repo/receipt_photos/

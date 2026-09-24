@@ -529,6 +529,11 @@ fn addZigObject(b: *std.Build, opts: ZigObjectOptions) std.Build.LazyPath {
         // that ld.lld refuses in a shared library. Caught by the Phase 6b
         // iter 3d end-to-end smoke deploy.
         .pic = true,
+        // mob_nif.zig (mob >= 0.9) declares `extern "c"` functions (open,
+        // write, close), which this Zig version only accepts when the module
+        // links libc. Only the .o is built here; NDK clang does the real link
+        // against bionic in linkSharedLib, so no Zig-provided libc is needed.
+        .link_libc = true,
     });
 
     if (opts.build_options) |build_opts| {

@@ -123,6 +123,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
@@ -176,6 +178,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -3363,6 +3366,19 @@ private fun MobTextField(node: MobNode, modifier: Modifier) {
     val fillWidth = boolProp(node.props, "fill_width") ?: false
     val tfModifier = if (fillWidth) modifier.fillMaxWidth() else modifier
 
+    // variant: :bare drops Material's filled container and underline, for a
+    // field that sits inside a Box drawing its own background and border.
+    val tfColors = if (node.props["variant"] == "bare") {
+        TextFieldDefaults.colors(
+            focusedContainerColor   = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            disabledContainerColor  = Color.Transparent,
+            focusedIndicatorColor   = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor  = Color.Transparent,
+        )
+    } else TextFieldDefaults.colors()
+
     TextField(
         value         = localValue,
         onValueChange = { new ->
@@ -3376,6 +3392,7 @@ private fun MobTextField(node: MobNode, modifier: Modifier) {
                 else                 blurHandle?.let  { MobBridge.nativeSendBlur(it)  }
             },
         singleLine      = true,
+        colors          = tfColors,
         visualTransformation =
             if (isSecure) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
@@ -3560,6 +3577,8 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "home"            -> Icons.Filled.Home
         "expand_more"     -> Icons.Filled.ExpandMore
         "expand_less"     -> Icons.Filled.ExpandLess
+        "camera"          -> Icons.Filled.PhotoCamera
+        "qr_code"         -> Icons.Filled.QrCodeScanner
         else              -> Icons.Filled.QuestionMark
     }
 

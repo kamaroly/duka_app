@@ -1,30 +1,30 @@
 defmodule DukaApp.App do
-  @moduledoc "Application entry point for DukaApp."
+  @moduledoc "Application entry point: an offline tracker for KRA eTIMS receipts."
 
-  use Mob.App
+  # Automatically adjusts to system light/dark settings
+  use Mob.App, theme: DukaApp.Theme.Adaptive
+
+  alias DukaApp.Screens.{PhoneScreen, ReceiptsScreen}
 
   @impl Mob.App
   def navigation(_platform) do
-    tab_bar([
-      stack(:main, root: DukaApp.Screens.WelcomeScreen, title: "Main"),
-      stack(:home, root: DukaApp.HomeScreen, title: "Home"),
-      stack(:audio, root: DukaApp.AudioScreen, title: "Audio")
-    ])
+    stack(:main, root: ReceiptsScreen, title: "Receipts")
   end
 
   @impl Mob.App
   def on_start do
     DukaApp.Components.register_all()
+    Mob.Composite.register(:header, {DukaApp.Components.Header, :expand})
+    Mob.Composite.register(:search_field, {DukaApp.Components.SearchField, :expand})
+    Mob.Composite.register(:receipt_item, {DukaApp.Components.ReceiptItem, :expand})
+    Mob.Composite.register(:receipt_detail, {DukaApp.Components.ReceiptDetailSheet, :expand})
+
     # Configure BEAM's DNS path so Req / Finch / Mint / `gen_tcp:connect/3`
     # with a hostname work on iOS without per-host setup. Flips the lookup
     # chain from the iOS-broken `:native` (inet_gethost port program) path
     # to `[:file, :dns]` and seeds Google + Cloudflare as fallback
     # nameservers. Override with `nameservers:` if you need to (corporate
     # resolver, Quad9, etc.) — see `Mob.DNS.configure_pure_beam/1`.
-    #
-    # For hosts that need Apple's resolver (VPN-pushed DNS, mDNS,
-    # captive portals, search-domain expansion) call `Mob.DNS.resolve/1`
-    # for those specific hostnames here too. Both paths compose.
     Mob.DNS.configure_pure_beam()
 
     {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
@@ -34,16 +34,15 @@ defmodule DukaApp.App do
       Ecto.Migrator.run(repo, migrations_dir(), :up, all: true)
     end)
 
-    Mob.Screen.start_root(DukaApp.Screens.WelcomeScreen)
+    # After Repo/Mob.State are up and before the first screen renders, so the
+    # user's Light/Dark/System choice is in place from the first frame.
+    DukaApp.Appearance.apply_saved()
+
+    # First launch (or after "Switch phone number") asks for a number;
+    # otherwise go straight to that number's receipts.
+    root = if DukaApp.Accounts.current_profile(), do: ReceiptsScreen, else: PhoneScreen
+    Mob.Screen.start_root(root)
     Mob.Dist.ensure_started(node: :"duka_app_android@127.0.0.1", cookie: :mob_secret)
-
-    # Register custom components
-    Mob.Composite.register(:expense_item, {DukaApp.Components.ExpenseItem, :expand})
-
-    Mob.Composite.register(
-      :expense_detail_sheet,
-      {DukaApp.Components.ExpenseDetailSheet, :expand}
-    )
   end
 
   # Returns the path to the migrations directory for the current environment.

@@ -10,14 +10,17 @@ defmodule DukaApp.Repo do
     #   Android — context.getFilesDir()  (app-private, survives updates)
     #   iOS     — NSDocumentDirectory    (app-private, iCloud-backed)
     #
-    # When not running on device (e.g. mix ecto.migrate in dev), falls back to
-    # priv/repo/ in the project root so local development works without any setup.
-    data_dir =
-      System.get_env("MOB_DATA_DIR") ||
-        System.get_env("HOME") ||
-        Path.join(File.cwd!(), "priv/repo")
+    # Off device (mix test, mix ecto.migrate) the path from config wins, so the
+    # test sandbox and local development never touch a phone's database.
+    case System.get_env("MOB_DATA_DIR") do
+      nil ->
+        database = Keyword.fetch!(config, :database)
+        File.mkdir_p!(Path.dirname(database))
+        {:ok, config}
 
-    File.mkdir_p!(data_dir)
-    {:ok, Keyword.merge(config, database: Path.join(data_dir, "app.db"), pool_size: 1)}
+      data_dir ->
+        File.mkdir_p!(data_dir)
+        {:ok, Keyword.merge(config, database: Path.join(data_dir, "app.db"), pool_size: 1)}
+    end
   end
 end

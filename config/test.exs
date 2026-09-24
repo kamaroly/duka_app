@@ -1,0 +1,14 @@
+import Config
+
+config :logger, level: :warning
+
+config :duka_app, DukaApp.Repo,
+  database:
+    Path.expand("../priv/repo/duka_app_test#{System.get_env("MIX_TEST_PARTITION")}.db", __DIR__),
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: 5
+
+config :duka_app, :native, false
+
+# Receipt photos written by tests go to a throwaway directory.
+config :duka_app, :photos_dir, Path.join(System.tmp_dir!(), "duka_app_test_photos")

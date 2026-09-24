@@ -1,4 +1,5 @@
 import Config
+config :duka_app, DukaApp.Repo, timeout: 15_000, busy_timeout: 16_000
 
 # Register the Repo so Mix tasks (mix ecto.create, mix ecto.migrate) can
 # discover it. The actual database path is configured at runtime in
@@ -9,5 +10,9 @@ config :duka_app, ecto_repos: [DukaApp.Repo]
 # state persistence. Remove this line to disable screen state persistence.
 config :mob, :repo, DukaApp.Repo
 
-config :mob, :extra_tags, ~w(ExpenseItem ExpenseDetailSheet)
-config :mob, :plugins, [:mob_camera, :mob_scanner]
+config :mob, :extra_tags, ~w(ReceiptItem ReceiptDetail SearchField Header Icon)
+config :mob, :plugins, [:mob_camera, :mob_scanner, :mob_biometric, :mob_ocr]
+
+# mob_ocr lives in plugins/ and is not signed with the mob release key.
+config :mob, :acknowledge_unsafe_plugins, [:mob_ocr]
+import_config "#{config_env()}.exs"
