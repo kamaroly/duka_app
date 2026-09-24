@@ -7,6 +7,7 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
 
   import Mob.Sigil
 
+  alias DukaApp.Components.{ActionButton, Header}
   alias DukaApp.Receipts
   alias DukaApp.Receipts.Photos
 
@@ -22,57 +23,67 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
       corner_radius={28}
       on_dismiss={{self(), :close_receipt}}
     >
-      <Column fill_width={true} padding={20} gap={12}>
-        <Text
-          text={receipt.vendor}
-          text_size={:xl}
-          font_weight="medium"
-          text_color={:primary}
-          max_lines={2}
-        />
+      <Column fill_width={true} padding={20}>
+        <Row fill_width={true} align={:top}>
+          <Text
+            text={receipt.vendor}
+            text_size={22}
+            font_weight="bold"
+            letter_spacing={-0.6}
+            text_color={:on_background}
+            max_lines={2}
+            weight={1}
+          />
+          <Spacer size={12} />
+          {Header.icon_button("close", "Close", {self(), :close_receipt})}
+        </Row>
+        <Spacer size={12} />
         <Image
           :if={receipt.photo_path}
           src={Photos.path(receipt.photo_path)}
           fill_width={true}
           height={300}
           content_mode={:fit}
-          corner_radius={:radius_sm}
+          corner_radius={16}
         />
-        <Box background={:surface} corner_radius={:radius_sm} padding={12} fill_width={true}>
-          <Column gap={4} fill_width={true}>
-            <Text text="Amount" text_size={:xs} text_color={:muted} />
-            <Text text={Receipts.format_amount(receipt.amount_cents)} text_size={:xl} />
+        <Spacer :if={receipt.photo_path} size={12} />
+        <Box
+          background={:surface}
+          border_color={:border}
+          border_width={1}
+          corner_radius={16}
+          padding={14}
+          fill_width={true}
+        >
+          <Column fill_width={true}>
+            <Text text="Amount" text_size={12} text_color={:muted} />
+            <Text
+              text={Receipts.format_amount(receipt.amount_cents)}
+              text_size={22}
+              font_weight="bold"
+              text_color={:on_surface}
+            />
           </Column>
         </Box>
+        <Spacer size={4} />
         {detail_row("Date", Calendar.strftime(receipt.date, "%a, %d %b %Y"))}
         {detail_row("Category", receipt.category)}
         {detail_row("Description", receipt.description)}
         {detail_row("Seller KRA PIN", receipt.seller_pin)}
         {detail_row("Receipt / invoice no.", receipt.invoice_number)}
         {detail_row("Source", source_label(receipt.source))}
-        <Button
-          :if={is_binary(receipt.verify_url)}
-          text="Verify on KRA (needs internet)"
-          on_tap={{self(), :verify_receipt}}
-          fill_width={true}
-        />
-        <Row fill_width={true} gap={8}>
-          <Button text="Edit" on_tap={{self(), :edit_receipt}} weight={1} />
-          <Button
-            text="Delete"
-            on_tap={{self(), :delete_receipt}}
-            weight={1}
-            background={:error}
-            text_color={:on_error}
-          />
+        <Spacer size={16} />
+        <Row fill_width={true}>
+          {ActionButton.button("edit", "Edit", :edit_receipt, weight: 1)}
+          <Spacer size={8} />
+          {ActionButton.button("trash", "Delete", :delete_receipt, style: :danger, weight: 1)}
         </Row>
-        <Button
-          text="Close"
-          on_tap={{self(), :close_receipt}}
-          fill_width={true}
-          background={:surface}
-          text_color={:on_surface}
-        />
+        <Spacer :if={is_binary(receipt.verify_url)} size={8} />
+        {if is_binary(receipt.verify_url),
+          do:
+            ActionButton.button("open", "Verify on KRA (needs internet)", :verify_receipt,
+              style: :secondary
+            )}
       </Column>
     </Sheet>
     """
@@ -82,9 +93,9 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
 
   defp detail_row(label, value) do
     ~MOB"""
-    <Column gap={2} fill_width={true}>
-      <Text text={label} text_size={:xs} text_color={:muted} />
-      <Text text={value} text_size={:sm} max_lines={3} fill_width={true} />
+    <Column fill_width={true} padding_top={10}>
+      <Text text={label} text_size={12} text_color={:muted} />
+      <Text text={value} text_size={14} text_color={:on_background} max_lines={3} />
     </Column>
     """
   end

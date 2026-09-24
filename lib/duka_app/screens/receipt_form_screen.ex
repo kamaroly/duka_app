@@ -22,7 +22,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
   use Mob.Screen
 
   alias DukaApp.{Accounts, Native, Receipts}
-  alias DukaApp.Components.FormField
+  alias DukaApp.Components.{ActionButton, FormField}
   alias DukaApp.Receipts.{OcrParser, Photos, QrParser, Receipt}
 
   @categories Receipt.categories()
@@ -81,18 +81,23 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
     <Column background={:background} fill_height={true}>
       <Header title={title(@mode, @receipt)} show_back={true} />
       <Scroll weight={1}>
-        <Column padding={16} gap={12} fill_width={true}>
+        <Column padding_left={18} padding_right={18} padding_bottom={16} fill_width={true}>
           {photo_section(assigns)}
+          <Spacer size={12} />
           <Box
             :if={@notice}
             background={:surface}
-            corner_radius={:radius_sm}
+            border_color={:border}
+            border_width={1}
+            corner_radius={16}
             padding={12}
             fill_width={true}
           >
-            <Text text={@notice} text_size={:sm} text_color={:on_surface} />
+            <Text text={@notice} text_size={13} text_color={:on_surface} />
           </Box>
+          <Spacer :if={@notice} size={12} />
           {qr_section(assigns)}
+          <Spacer size={16} />
           {FormField.field(
             label: "Date on receipt",
             key: :date,
@@ -125,33 +130,50 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
             hint: "The total on the receipt, including VAT.",
             error: @errors[:amount]
           )}
-          <Column gap={4} fill_width={true}>
-            <Text text="Category" text_size={:sm} font_weight="medium" text_color={:on_background} />
-            <Button
-              text={@category}
-              on_tap={{self(), :pick_category}}
+          <Column fill_width={true} padding_bottom={12}>
+            <Text text="Category" text_size={13} font_weight="medium" text_color={:on_background} />
+            <Spacer size={6} />
+            <Row
               fill_width={true}
+              height={52}
               background={:surface}
-              text_color={:on_surface}
-            />
+              border_color={if(@errors[:category], do: :error, else: :border)}
+              border_width={1}
+              corner_radius={16}
+              padding_left={16}
+              padding_right={12}
+              align={:center}
+              on_tap={{self(), :pick_category}}
+              accessibility_label={"Category: #{@category}. Change category"}
+              accessibility_role={:button}
+            >
+              <Text text={@category} text_size={16} text_color={:on_surface} weight={1} />
+              <Icon name="expand_more" text_size={20} text_color={:muted} />
+            </Row>
+            <Spacer :if={@errors[:category]} size={4} />
             <Text
               :if={@errors[:category]}
               text={@errors[:category]}
-              text_size={:xs}
+              text_size={12}
               text_color={:error}
             />
           </Column>
           <Text :if={@errors[:base]} text={@errors[:base]} text_color={:error} />
         </Column>
       </Scroll>
-      <Column padding={12} fill_width={true}>
-        <Button
-          text={if @reading, do: "Reading receipt…", else: "Save receipt"}
-          on_tap={{self(), :save}}
-          enabled={not @reading}
-          fill_width={true}
-          padding={:xs}
-        />
+      <Column
+        fill_width={true}
+        padding_left={18}
+        padding_right={18}
+        padding_top={8}
+        padding_bottom={16}
+      >
+        {ActionButton.button(
+          "check",
+          if(@reading, do: "Reading receipt…", else: "Save receipt"),
+          :save,
+          enabled: not @reading
+        )}
       </Column>
     </Column>
     """
@@ -159,12 +181,25 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
 
   defp photo_section(%{reading: true}) do
     ~MOB"""
-    <Box background={:surface} corner_radius={:radius_sm} padding={16} fill_width={true}>
-      <Column gap={4} fill_width={true}>
-        <Text text="Reading receipt…" text_size={:base} font_weight="medium" />
+    <Box
+      background={:surface}
+      border_color={:border}
+      border_width={1}
+      corner_radius={16}
+      padding={14}
+      fill_width={true}
+    >
+      <Column fill_width={true}>
+        <Text
+          text="Reading receipt…"
+          text_size={15}
+          font_weight="semibold"
+          text_color={:on_surface}
+        />
+        <Spacer size={2} />
         <Text
           text="Finding the vendor, date and total in your photo."
-          text_size={:xs}
+          text_size={12}
           text_color={:muted}
         />
       </Column>
@@ -173,77 +208,70 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
   end
 
   defp photo_section(%{receipt: %Receipt{photo_path: nil}}) do
-    ~MOB"""
-    <Button
-      text="Add receipt photo (reads the details for you)"
-      on_tap={{self(), :take_photo}}
-      fill_width={true}
-      background={:surface}
-      text_color={:on_surface}
-    />
-    """
+    ActionButton.button("camera", "Add receipt photo", :take_photo, style: :secondary)
   end
 
   defp photo_section(%{receipt: receipt}) do
     ~MOB"""
-    <Column gap={8} fill_width={true}>
-      <Text text="Receipt photo" text_size={:sm} font_weight="medium" text_color={:on_background} />
+    <Column fill_width={true}>
       <Image
         src={Photos.path(receipt.photo_path)}
         fill_width={true}
         height={260}
         content_mode={:fit}
-        corner_radius={:radius_sm}
+        corner_radius={16}
       />
-      <Row gap={8} fill_width={true}>
-        <Button
-          text="Retake"
-          on_tap={{self(), :take_photo}}
-          weight={1}
-          background={:surface}
-          text_color={:on_surface}
-        />
-        <Button
-          text="Remove photo"
-          on_tap={{self(), :remove_photo}}
-          weight={1}
-          background={:surface}
-          text_color={:on_surface}
-        />
+      <Spacer size={8} />
+      <Row fill_width={true}>
+        {ActionButton.button("camera", "Retake", :take_photo, style: :secondary, weight: 1)}
+        <Spacer size={8} />
+        {ActionButton.button("trash", "Remove", :remove_photo, style: :secondary, weight: 1)}
       </Row>
     </Column>
     """
   end
 
   defp qr_section(%{receipt: %Receipt{qr_content: nil}, reading: false}) do
-    ~MOB"""
-    <Button
-      text="Scan the receipt's QR code"
-      on_tap={{self(), :scan_qr}}
-      fill_width={true}
-      background={:surface}
-      text_color={:on_surface}
-    />
-    """
+    ActionButton.button("qr_code", "Scan the receipt's QR code", :scan_qr, style: :secondary)
   end
 
   defp qr_section(%{receipt: %Receipt{qr_content: nil}}), do: []
 
   defp qr_section(%{receipt: receipt}) do
     ~MOB"""
-    <Box background={:surface} corner_radius={:radius_sm} padding={12} fill_width={true}>
-      <Column gap={4} fill_width={true}>
-        <Text text={qr_heading(receipt)} text_size={:sm} font_weight="medium" />
+    <Box
+      background={:surface}
+      border_color={:border}
+      border_width={1}
+      corner_radius={16}
+      padding={12}
+      fill_width={true}
+    >
+      <Column fill_width={true}>
+        <Text
+          text={qr_heading(receipt)}
+          text_size={14}
+          font_weight="semibold"
+          text_color={:on_surface}
+        />
+        <Spacer size={4} />
         <Text
           :if={receipt.seller_pin}
           text={"Seller KRA PIN: #{receipt.seller_pin}"}
-          text_size={:sm}
+          text_size={13}
+          text_color={:muted}
         />
-        <Text :if={receipt.branch_id} text={"Branch: #{receipt.branch_id}"} text_size={:sm} />
+        <Text
+          :if={receipt.branch_id}
+          text={"Branch: #{receipt.branch_id}"}
+          text_size={13}
+          text_color={:muted}
+        />
         <Text
           :if={receipt.invoice_number}
           text={"Receipt no.: #{receipt.invoice_number}"}
-          text_size={:sm}
+          text_size={13}
+          text_color={:muted}
           max_lines={2}
         />
       </Column>

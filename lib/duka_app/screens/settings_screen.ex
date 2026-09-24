@@ -7,7 +7,7 @@ defmodule DukaApp.Screens.SettingsScreen do
   use Mob.Screen
 
   alias DukaApp.{Accounts, Appearance, Receipts}
-  alias DukaApp.Components.FormField
+  alias DukaApp.Components.{ActionButton, FormField}
 
   @impl Mob.Screen
   def mount(_params, _session, socket) do
@@ -31,20 +31,37 @@ defmodule DukaApp.Screens.SettingsScreen do
     <Column background={:background} fill_height={true}>
       <Header title="Settings" show_back={true} />
       <Scroll weight={1}>
-        <Column padding={16} gap={12} fill_width={true}>
-          <Box background={:surface} corner_radius={:radius_sm} padding={12} fill_width={true}>
-            <Column gap={4} fill_width={true}>
-              <Text text="Phone number" text_size={:xs} text_color={:muted} />
-              <Text text={@profile.phone} text_size={:lg} font_weight="medium" />
-              <Text text={stats(@summary)} text_size={:xs} text_color={:muted} />
+        <Column padding_left={18} padding_right={18} padding_bottom={16} fill_width={true}>
+          <Box
+            background={:surface}
+            border_color={:border}
+            border_width={1}
+            corner_radius={16}
+            padding={14}
+            fill_width={true}
+          >
+            <Column fill_width={true}>
+              <Text text="Phone number" text_size={12} text_color={:muted} />
+              <Text
+                text={@profile.phone}
+                text_size={18}
+                font_weight="semibold"
+                text_color={:on_surface}
+              />
+              <Text text={stats(@summary)} text_size={12} text_color={:muted} />
             </Column>
           </Box>
-          <Text text="Appearance" text_size={:sm} font_weight="medium" text_color={:on_background} />
-          <Row gap={8} fill_width={true}>
-            {Enum.map(Appearance.modes(), &appearance_button(&1, @appearance))}
+          <Spacer size={16} />
+          <Text text="Appearance" text_size={13} font_weight="medium" text_color={:on_background} />
+          <Spacer size={6} />
+          <Row fill_width={true}>
+            {Appearance.modes()
+             |> Enum.map(&appearance_button(&1, @appearance))
+             |> Enum.intersperse(~MOB(<Spacer size={8} />))}
           </Row>
-          <Text text={appearance_hint(@appearance)} text_size={:xs} text_color={:muted} />
-          <Spacer size={8} />
+          <Spacer size={4} />
+          <Text text={appearance_hint(@appearance)} text_size={12} text_color={:muted} />
+          <Spacer size={16} />
           {FormField.field(
             label: "Your name (optional)",
             key: :name,
@@ -73,18 +90,14 @@ defmodule DukaApp.Screens.SettingsScreen do
             value={@app_lock}
             on_change={{self(), :app_lock}}
           />
-          <Button text="Save changes" on_tap={{self(), :save}} fill_width={true} padding={:xs} />
-          <Spacer size={16} />
-          <Button
-            text="Switch phone number"
-            on_tap={{self(), :switch_phone}}
-            fill_width={true}
-            background={:surface}
-            text_color={:on_surface}
-          />
+          <Spacer size={12} />
+          {ActionButton.button("check", "Save changes", :save)}
+          <Spacer size={24} />
+          {ActionButton.button("phone", "Switch phone number", :switch_phone, style: :secondary)}
+          <Spacer size={6} />
           <Text
             text="Receipts stay on this phone under their number. Switching shows a different number's receipts; nothing is deleted."
-            text_size={:xs}
+            text_size={12}
             text_color={:muted}
           />
         </Column>
@@ -93,18 +106,31 @@ defmodule DukaApp.Screens.SettingsScreen do
     """
   end
 
+  # A segmented control: one pill per mode, the chosen one filled.
   defp appearance_button(mode, selected) do
     {background, text_color} =
       if mode == selected, do: {:primary, :on_primary}, else: {:surface, :on_surface}
 
     ~MOB"""
-    <Button
-      text={Appearance.label(mode)}
-      on_tap={{self(), {:appearance, mode}}}
+    <Box
       weight={1}
+      height={40}
       background={background}
-      text_color={text_color}
-    />
+      border_color={if(mode == selected, do: :primary, else: :border)}
+      border_width={1}
+      corner_radius={:radius_pill}
+      align={:center}
+      on_tap={{self(), {:appearance, mode}}}
+      accessibility_label={"Appearance: #{Appearance.label(mode)}"}
+      accessibility_role={:button}
+    >
+      <Text
+        text={Appearance.label(mode)}
+        text_size={14}
+        font_weight="medium"
+        text_color={text_color}
+      />
+    </Box>
     """
   end
 

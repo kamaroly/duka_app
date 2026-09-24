@@ -123,6 +123,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ArrowBack
@@ -3582,6 +3585,9 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "expand_less"     -> Icons.Filled.ExpandLess
         "camera"          -> Icons.Filled.PhotoCamera
         "qr_code"         -> Icons.Filled.QrCodeScanner
+        "lock"            -> Icons.Filled.Lock
+        "phone"           -> Icons.Filled.Phone
+        "open"            -> Icons.Filled.OpenInNew
         else              -> Icons.Filled.QuestionMark
     }
 

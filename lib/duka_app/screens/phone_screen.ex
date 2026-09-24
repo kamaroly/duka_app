@@ -7,7 +7,7 @@ defmodule DukaApp.Screens.PhoneScreen do
   use Mob.Screen
 
   alias DukaApp.Accounts
-  alias DukaApp.Components.FormField
+  alias DukaApp.Components.{ActionButton, FormField}
 
   @impl Mob.Screen
   def mount(_params, _session, socket) do
@@ -20,14 +20,22 @@ defmodule DukaApp.Screens.PhoneScreen do
   @impl Mob.Screen
   def render(assigns) do
     ~MOB"""
-    <Column padding={24} gap={16} background={:background} fill_height={true}>
-      <Spacer size={32} />
-      <Text text="eTIMS Receipts" text_size={:xxl} font_weight="bold" text_color={:primary} />
+    <Column padding_left={22} padding_right={22} background={:background} fill_height={true}>
+      <Spacer size={56} />
       <Text
-        text="Scan KRA eTIMS receipts and keep them on your phone, even offline. Enter your phone number to open your receipt book."
-        text_size={:base}
+        text="eTIMS Receipts"
+        text_size={26}
+        font_weight="bold"
+        letter_spacing={-1}
         text_color={:on_background}
       />
+      <Spacer size={8} />
+      <Text
+        text="Scan KRA eTIMS receipts and keep them on your phone, even offline. Enter your phone number to open your receipt book."
+        text_size={15}
+        text_color={:muted}
+      />
+      <Spacer size={24} />
       {FormField.field(
         label: "Phone number",
         key: :phone,
@@ -38,7 +46,8 @@ defmodule DukaApp.Screens.PhoneScreen do
         error: @error,
         submit: :continue
       )}
-      <Button text="Continue" on_tap={{self(), :continue}} fill_width={true} padding={:xs} />
+      <Spacer size={4} />
+      {ActionButton.button("forward", "Continue", :continue)}
     </Column>
     """
   end

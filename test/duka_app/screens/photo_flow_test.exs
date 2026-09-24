@@ -127,7 +127,7 @@ defmodule DukaApp.Screens.PhotoFlowTest do
        %{profile: profile} do
     {view, dest} = start_photo_form()
     assert assigns(view).reading
-    assert_renderable(view, extra: [:header])
+    assert_renderable(view, extra: [:header, :icon])
 
     view = render_info(view, ocr_reply(dest, @ocr_text, @etims))
 
@@ -136,7 +136,7 @@ defmodule DukaApp.Screens.PhotoFlowTest do
 
     assert assigns(view).notice =~ "Read the vendor, date, total"
     assert assigns(view).receipt.source == "etims"
-    assert_renderable(view, extra: [:header])
+    assert_renderable(view, extra: [:header, :icon])
 
     view = view |> render_info({:alert, :category_0}) |> render_info({:tap, :save})
     assert {:reset, ReceiptsScreen, _, _} = nav_action(view)

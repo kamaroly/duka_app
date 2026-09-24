@@ -11,7 +11,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   use Mob.Screen
 
   alias DukaApp.{Accounts, Native, Receipts, Theme}
-  alias DukaApp.Components.ReceiptItem
+  alias DukaApp.Components.{ActionButton, ReceiptItem}
   alias DukaApp.Screens.{PhoneScreen, ReceiptFormScreen, SettingsScreen}
 
   # The month picker offers this many months back from today.
@@ -48,19 +48,21 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   @impl Mob.Screen
   def render(%{profile: nil}) do
     ~MOB"""
-    <Column padding={24} gap={16} background={:background} fill_height={true}>
-      <Text text="No receipt book is open." text_size={:lg} />
-      <Button text="Enter phone number" on_tap={{self(), :sign_in}} fill_width={true} />
+    <Column padding={24} background={:background} fill_height={true}>
+      <Text text="No receipt book is open." text_size={:lg} text_color={:on_background} />
+      <Spacer size={16} />
+      {ActionButton.button("phone", "Enter phone number", :sign_in)}
     </Column>
     """
   end
 
   def render(%{locked: true}) do
     ~MOB"""
-    <Column padding={24} gap={16} background={:background} fill_height={true}>
+    <Column padding={24} background={:background} fill_height={true}>
       <Spacer size={48} />
-      <Text text="Receipts are locked" text_size={:xl} text_color={:primary} />
-      <Button text="Unlock" on_tap={{self(), :unlock}} fill_width={true} />
+      <Text text="Receipts are locked" text_size={:xl} text_color={:on_background} />
+      <Spacer size={16} />
+      {ActionButton.button("lock", "Unlock", :unlock)}
     </Column>
     """
   end
@@ -75,8 +77,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       />
       <Column fill_width={true} padding_left={18} padding_right={18}>
         <SearchField :if={@searching} query={@query} on_change={{self(), :search}} />
-        <Spacer :if={@searching} size={14} />
-        {spend_card(@summary, @month)}
+        {if not @searching, do: spend_card(@summary, @month)}
         <Spacer size={14} />
       </Column>
       {chips(@group, @summary.count)}
