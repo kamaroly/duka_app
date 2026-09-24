@@ -41,16 +41,5 @@ defmodule DukaApp.Receipts.Photos do
   end
 
   @spec dir() :: String.t()
-  def dir do
-    base =
-      Application.get_env(:duka_app, :photos_dir) ||
-        case System.get_env("MOB_DATA_DIR") do
-          nil -> DukaApp.Repo.config() |> Keyword.fetch!(:database) |> Path.dirname()
-          data_dir -> data_dir
-        end
-
-    path = Path.join(base, @dir)
-    File.mkdir_p!(path)
-    path
-  end
+  def dir, do: DukaApp.DataDir.path(@dir)
 end

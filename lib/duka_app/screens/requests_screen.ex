@@ -8,6 +8,7 @@ defmodule DukaApp.Screens.RequestsScreen do
 
   alias DukaApp.{Accounts, Native, Receipts, Requests}
   alias DukaApp.Components.{ActionButton, Header, KraBadge}
+  alias DukaApp.Requests.{Attachment, Attachments}
   alias DukaApp.Screens.RequestFormScreen
 
   @impl Mob.Screen
@@ -124,7 +125,16 @@ defmodule DukaApp.Screens.RequestsScreen do
               max_lines={1}
             />
             <Spacer size={2} />
-            <Text text={Requests.pay_to(request)} text_size={12} text_color={:muted} max_lines={1} />
+            <Row fill_width={true} align={:center}>
+              <Text
+                text={Requests.pay_to(request)}
+                text_size={12}
+                text_color={:muted}
+                max_lines={1}
+                weight={1}
+              />
+              {attachment_count(request.attachments)}
+            </Row>
           </Column>
           <Spacer size={12} />
           <Column>
@@ -141,6 +151,18 @@ defmodule DukaApp.Screens.RequestsScreen do
         </Row>
       </Box>
     </Column>
+    """
+  end
+
+  defp attachment_count([]), do: []
+
+  defp attachment_count(list) do
+    ~MOB"""
+    <Row align={:center} accessibility_label={"#{length(list)} attachments"}>
+      <Spacer size={6} />
+      <Icon name="attach" text_size={14} text_color={:muted} />
+      <Text text={Integer.to_string(length(list))} text_size={12} text_color={:muted} />
+    </Row>
     """
   end
 
@@ -221,6 +243,7 @@ defmodule DukaApp.Screens.RequestsScreen do
         {detail_row(purpose_label(request), request.purpose)}
         {detail_row("Requested", Calendar.strftime(request.inserted_at, "%d %b %Y, %H:%M"))}
         {detail_row("Manager's note", request.decision_note)}
+        {attachments(request.attachments)}
         <Spacer size={16} />
         {if request.status == "pending",
           do: ActionButton.button("trash", "Withdraw request", :cancel_request, style: :secondary)}
@@ -248,6 +271,72 @@ defmodule DukaApp.Screens.RequestsScreen do
   end
 
   defp receipt_row(_request), do: []
+
+  defp attachments([]), do: []
+
+  # Each opens in the phone's own viewer (a PDF reader, the gallery).
+  defp attachments(list) do
+    ~MOB"""
+    <Column fill_width={true} padding_top={10}>
+      <Text text="Attachments" text_size={12} text_color={:muted} />
+      <Spacer size={6} />
+      {Enum.map(list, &attachment_row/1)}
+    </Column>
+    """
+  end
+
+  defp attachment_row(attachment) do
+    ~MOB"""
+    <Column fill_width={true} padding_bottom={8}>
+      <Row
+        fill_width={true}
+        align={:center}
+        background={:surface}
+        border_color={:border}
+        border_width={1}
+        corner_radius={14}
+        padding={8}
+        on_tap={{self(), {:open_attachment, attachment.id}}}
+        accessibility_label={"Open #{attachment.name}"}
+        accessibility_role={:button}
+      >
+        {attachment_thumb(attachment)}
+        <Spacer size={10} />
+        <Column weight={1}>
+          <Text
+            text={attachment.name}
+            text_size={14}
+            font_weight="medium"
+            text_color={:on_surface}
+            max_lines={1}
+          />
+          <Text text={Attachments.format_size(attachment.size)} text_size={12} text_color={:muted} />
+        </Column>
+        <Icon name="open" text_size={18} text_color={:muted} />
+      </Row>
+    </Column>
+    """
+  end
+
+  defp attachment_thumb(attachment) do
+    if Attachment.image?(attachment) do
+      ~MOB"""
+      <Image
+        src={Attachments.path(attachment.file_name)}
+        width={40}
+        height={40}
+        corner_radius={10}
+        content_mode={:fill}
+      />
+      """
+    else
+      ~MOB"""
+      <Box width={40} height={40} corner_radius={10} background={:surface_raised} align={:center}>
+        <Icon name="file" text_size={20} text_color={:on_surface} />
+      </Box>
+      """
+    end
+  end
 
   defp detail_row(_label, value) when value in [nil, ""], do: []
 
@@ -303,6 +392,15 @@ defmodule DukaApp.Screens.RequestsScreen do
 
       nil ->
         {:noreply, socket}
+    end
+  end
+
+  def handle_info({:tap, {:open_attachment, id}}, socket) do
+    with %{attachments: attachments} <- socket.assigns.selected,
+         %Attachment{file_name: file_name} <- Enum.find(attachments, &(&1.id == id)) do
+      {:noreply, Native.open_file(socket, Attachments.path(file_name))}
+    else
+      _ -> {:noreply, socket}
     end
   end
 

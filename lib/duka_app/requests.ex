@@ -12,7 +12,7 @@ defmodule DukaApp.Requests do
   alias DukaApp.Accounts.Profile
   alias DukaApp.Receipts.Receipt
   alias DukaApp.Repo
-  alias DukaApp.Requests.Request
+  alias DukaApp.Requests.{Attachment, Attachments, Request}
 
   # A refund in any of these states stops another one for the same receipt;
   # a rejected one doesn't, so the user can ask again.
@@ -25,13 +25,15 @@ defmodule DukaApp.Requests do
       from q in Request,
         where: q.profile_id == ^profile_id,
         order_by: [desc: q.inserted_at, desc: q.id],
-        preload: :receipt
+        preload: [:receipt, :attachments]
     )
   end
 
   @spec get_request!(Profile.t(), integer()) :: Request.t()
   def get_request!(%Profile{id: profile_id}, id) do
-    Request |> Repo.get_by!(id: id, profile_id: profile_id) |> Repo.preload(:receipt)
+    Request
+    |> Repo.get_by!(id: id, profile_id: profile_id)
+    |> Repo.preload([:receipt, :attachments])
   end
 
   @doc "Pending requests and their total, in cents."
@@ -75,20 +77,29 @@ defmodule DukaApp.Requests do
   def new_payment, do: %Request{kind: "payment", method: "send_money"}
 
   @doc """
-  Saves a request. A refund is refused when the receipt already has one that
-  wasn't rejected, and its amount is always the receipt's total.
+  Saves a request, with the `attachments` already stored by
+  `DukaApp.Requests.Attachments.store/3`, in one transaction. A refund is
+  refused when the receipt already has one that wasn't rejected, and its
+  amount is always the receipt's total.
   """
-  @spec create_request(Profile.t(), Request.t(), map()) ::
+  @spec create_request(Profile.t(), Request.t(), map(), [Attachment.t()]) ::
           {:ok, Request.t()} | {:error, Ecto.Changeset.t()}
-  def create_request(%Profile{id: profile_id}, %Request{} = draft, attrs) do
+  def create_request(%Profile{id: profile_id}, %Request{} = draft, attrs, attachments \\ []) do
     changeset =
       %{draft | profile_id: profile_id}
       |> Request.changeset(attrs)
       |> check_refund()
 
-    with {:ok, request} <- Repo.insert(changeset) do
-      {:ok, Repo.preload(request, :receipt)}
-    end
+    Repo.transaction(fn ->
+      case Repo.insert(changeset) do
+        {:ok, request} ->
+          Enum.each(attachments, &Repo.insert!(%{&1 | request_id: request.id}))
+          Repo.preload(request, [:receipt, :attachments])
+
+        {:error, changeset} ->
+          Repo.rollback(changeset)
+      end
+    end)
   end
 
   defp check_refund(changeset) do
@@ -111,9 +122,17 @@ defmodule DukaApp.Requests do
     end
   end
 
-  @doc "Withdraws a request. Only a pending one can be withdrawn."
+  @doc "Withdraws a request and deletes its attachments. Only a pending one can be withdrawn."
   @spec cancel_request(Request.t()) :: {:ok, Request.t()} | {:error, :not_pending}
-  def cancel_request(%Request{status: "pending"} = request), do: Repo.delete(request)
+  def cancel_request(%Request{status: "pending"} = request) do
+    attachments = request |> Repo.preload(:attachments) |> Map.fetch!(:attachments)
+
+    with {:ok, deleted} <- Repo.delete(request) do
+      Attachments.delete(attachments)
+      {:ok, deleted}
+    end
+  end
+
   def cancel_request(%Request{}), do: {:error, :not_pending}
 
   @doc """

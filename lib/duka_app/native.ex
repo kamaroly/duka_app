@@ -70,6 +70,23 @@ defmodule DukaApp.Native do
     )
   end
 
+  @doc """
+  Opens the system file picker for images and PDFs. Replies
+  `{:files, :picked, items}` or `{:files, :cancelled}` — see `Mob.Files`.
+  """
+  @spec pick_files(Mob.Socket.t()) :: Mob.Socket.t()
+  def pick_files(socket),
+    do: call(socket, :pick_files, [], &Mob.Files.pick(&1, types: [:images, :pdf]))
+
+  @doc "Opens a file from the app's storage in the phone's own viewer (PDF reader, gallery)."
+  @spec open_file(Mob.Socket.t(), String.t()) :: Mob.Socket.t()
+  def open_file(socket, path) do
+    call(socket, :open_file, [path], fn socket ->
+      Mob.Device.open_url(path)
+      socket
+    end)
+  end
+
   defp kra_reply(reply, nil), do: kra_reply(reply)
   defp kra_reply(reply, ref), do: Tuple.insert_at(kra_reply(reply), 3, ref)
 

@@ -4,4 +4,7 @@
     <cache-path name="mob_camera" path="." />
     <!-- Audio recording temp files -->
     <cache-path name="mob_audio" path="." />
+    <!-- Request attachments (request_attachments/) in the app's data dir,
+         opened in the phone's own viewer -->
+    <files-path name="app_files" path="." />
 </paths>

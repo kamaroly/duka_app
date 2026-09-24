@@ -4,6 +4,7 @@ defmodule DukaApp.Screens.RequestFlowTest do
   use Mob.ScreenCase, async: false
 
   alias DukaApp.{Accounts, Receipts, Requests}
+  alias DukaApp.Requests.Attachments
   alias DukaApp.Screens.{ReceiptsScreen, RequestFormScreen, RequestsScreen}
 
   @extra [:header, :search_field, :receipt_item, :receipt_detail, :icon]
@@ -139,5 +140,111 @@ defmodule DukaApp.Screens.RequestFlowTest do
 
     assert assigns(view).requests == []
     assert Requests.list_requests(profile) == []
+  end
+
+  describe "attachments" do
+    @describetag :tmp_dir
+
+    defp payment_form do
+      RequestFormScreen
+      |> mount_screen(%{notify: self()})
+      |> render_info({:change, :amount, "5000"})
+      |> render_info({:change, :purpose, "Printer toner"})
+      |> render_info({:tap, {:method, "till"}})
+      |> render_info({:change, :till_number, "832909"})
+    end
+
+    defp temp_file(dir, name, contents \\ "data") do
+      path = Path.join(dir, name)
+      File.write!(path, contents)
+      path
+    end
+
+    test "photos and picked files are attached, sent with the request, and openable", %{
+      profile: profile,
+      tmp_dir: dir
+    } do
+      form = render_info(payment_form(), {:tap, :attach_photo})
+      assert_received {:native, :request_camera, []}
+      form = render_info(form, {:permission, :camera, :granted})
+      assert_received {:native, :take_photo, []}
+
+      form = render_info(form, {:camera, :photo, %{path: temp_file(dir, "mob_cam_1.jpg")}})
+
+      form = render_info(form, {:tap, :attach_file})
+      assert_received {:native, :pick_files, []}
+
+      form =
+        render_info(
+          form,
+          {:files, :picked,
+           [
+             %{
+               path: temp_file(dir, "a.pdf"),
+               name: "Quote.pdf",
+               mime: "application/pdf",
+               size: 4
+             },
+             %{path: temp_file(dir, "b.txt"), name: "notes.txt", mime: "text/plain", size: 4}
+           ]}
+        )
+
+      assert [%{name: "Photo 1.jpg"}, %{name: "Quote.pdf"}] = assigns(form).attachments
+      assert_received {:native, :toast, ["notes.txt isn't an image or PDF"]}
+      assert_renderable(form, extra: @extra)
+
+      form = render_info(form, {:tap, :submit})
+      assert_received {:request_saved, request}
+      assert [%{name: "Photo 1.jpg"}, %{name: "Quote.pdf"}] = request.attachments
+      assert [%{attachments: [_, _]}] = Requests.list_requests(profile)
+
+      view =
+        RequestsScreen
+        |> mount_screen()
+        |> render_info({:select, :requests, 0})
+
+      assert_renderable(view, extra: @extra)
+
+      pdf = Enum.find(request.attachments, &(&1.name == "Quote.pdf"))
+      render_info(view, {:tap, {:open_attachment, pdf.id}})
+      path = Attachments.path(pdf.file_name)
+      assert_received {:native, :open_file, [^path]}
+
+      # Withdrawing the request deletes its files.
+      render_info(view, {:alert, :confirm_cancel})
+      refute File.exists?(path)
+      _ = form
+    end
+
+    test "removing one, or leaving without sending, deletes the copies", %{tmp_dir: dir} do
+      form =
+        render_info(
+          payment_form(),
+          {:files, :picked,
+           [
+             %{path: temp_file(dir, "a.pdf"), name: "A.pdf", mime: "application/pdf", size: 4},
+             %{path: temp_file(dir, "b.jpg"), name: "B.jpg", mime: "image/jpeg", size: 4}
+           ]}
+        )
+
+      [a, b] = assigns(form).attachments
+      form = render_info(form, {:tap, {:remove_attachment, 0}})
+      assert [%{name: "B.jpg"}] = assigns(form).attachments
+      refute File.exists?(Attachments.path(a.file_name))
+
+      render_info(form, {:tap, :header_back})
+      refute File.exists?(Attachments.path(b.file_name))
+    end
+
+    test "no more than five", %{tmp_dir: dir} do
+      files =
+        for i <- 1..6 do
+          %{path: temp_file(dir, "#{i}.jpg"), name: "#{i}.jpg", mime: "image/jpeg", size: 4}
+        end
+
+      form = render_info(payment_form(), {:files, :picked, files})
+      assert [_, _, _, _, _] = assigns(form).attachments
+      assert_received {:native, :toast, ["Only 5 attachments fit"]}
+    end
   end
 end

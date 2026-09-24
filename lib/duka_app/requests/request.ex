@@ -46,6 +46,7 @@ defmodule DukaApp.Requests.Request do
 
     belongs_to :profile, DukaApp.Accounts.Profile
     belongs_to :receipt, DukaApp.Receipts.Receipt
+    has_many :attachments, DukaApp.Requests.Attachment
 
     timestamps()
   end

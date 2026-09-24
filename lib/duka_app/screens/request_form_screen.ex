@@ -7,7 +7,8 @@ defmodule DukaApp.Screens.RequestFormScreen do
     * `%{receipt_id: id}` — refund that receipt. The amount is its total and
       the money goes by M-Pesa to a phone number (the user's own by default).
     * `%{}` — request a payment: amount, what it's for, and how to pay —
-      send money to a phone, a Buy Goods till, or a paybill and account.
+      send money to a phone, a Buy Goods till, or a paybill and account —
+      with optional attachments (an invoice or quotation: photos or PDFs).
     * `notify: pid` (either) — the screen that opened the form; it gets
       `{:request_saved, request}` after a save, since the screen popped back
       to is restored as it was rather than mounted again.
@@ -19,7 +20,7 @@ defmodule DukaApp.Screens.RequestFormScreen do
 
   alias DukaApp.{Accounts, Native, Receipts, Requests}
   alias DukaApp.Components.{ActionButton, FormField, KraBadge}
-  alias DukaApp.Requests.Request
+  alias DukaApp.Requests.{Attachment, Attachments, Request}
 
   @fields [:amount, :purpose, :phone, :till_number, :paybill_number, :account_number, :payee_name]
 
@@ -47,6 +48,10 @@ defmodule DukaApp.Screens.RequestFormScreen do
       |> Mob.Socket.assign(:account_number, "")
       |> Mob.Socket.assign(:payee_name, "")
       |> Mob.Socket.assign(:errors, %{})
+      # Stored as soon as they're added (see Attachments); deleted again if
+      # the request is never sent.
+      |> Mob.Socket.assign(:attachments, [])
+      |> Mob.Socket.assign(:pending_camera, false)
 
     {:ok, socket}
   end
@@ -188,8 +193,98 @@ defmodule DukaApp.Screens.RequestFormScreen do
       </Row>
       <Spacer size={16} />
       {method_fields(assigns)}
+      <Spacer size={4} />
+      {attachments_section(@attachments)}
     </Column>
     """
+  end
+
+  defp attachments_section(attachments) do
+    full? = length(attachments) >= Attachments.max_count()
+
+    ~MOB"""
+    <Column fill_width={true} padding_bottom={12}>
+      <Text
+        text="Attachments (optional)"
+        text_size={13}
+        font_weight="medium"
+        text_color={:on_background}
+      />
+      <Spacer size={2} />
+      <Text
+        text={"An invoice, quotation or photo. Images or PDFs, up to #{Attachments.max_count()}."}
+        text_size={12}
+        text_color={:muted}
+      />
+      <Spacer size={8} />
+      {Enum.with_index(attachments, &attachment_row/2)}
+      <Row :if={not full?} fill_width={true}>
+        {ActionButton.button("camera", "Take photo", :attach_photo, style: :secondary, weight: 1)}
+        <Spacer size={8} />
+        {ActionButton.button("attach", "Add file", :attach_file, style: :secondary, weight: 1)}
+      </Row>
+    </Column>
+    """
+  end
+
+  defp attachment_row(attachment, index) do
+    ~MOB"""
+    <Column fill_width={true} padding_bottom={8}>
+      <Row
+        fill_width={true}
+        align={:center}
+        background={:surface}
+        border_color={:border}
+        border_width={1}
+        corner_radius={14}
+        padding={8}
+      >
+        {attachment_thumb(attachment)}
+        <Spacer size={10} />
+        <Column weight={1}>
+          <Text
+            text={attachment.name}
+            text_size={14}
+            font_weight="medium"
+            text_color={:on_surface}
+            max_lines={1}
+          />
+          <Text text={Attachments.format_size(attachment.size)} text_size={12} text_color={:muted} />
+        </Column>
+        <Box
+          width={36}
+          height={36}
+          corner_radius={10}
+          align={:center}
+          on_tap={{self(), {:remove_attachment, index}}}
+          accessibility_label={"Remove #{attachment.name}"}
+          accessibility_role={:button}
+        >
+          <Icon name="close" text_size={18} text_color={:muted} />
+        </Box>
+      </Row>
+    </Column>
+    """
+  end
+
+  defp attachment_thumb(attachment) do
+    if Attachment.image?(attachment) do
+      ~MOB"""
+      <Image
+        src={Attachments.path(attachment.file_name)}
+        width={40}
+        height={40}
+        corner_radius={10}
+        content_mode={:fill}
+      />
+      """
+    else
+      ~MOB"""
+      <Box width={40} height={40} corner_radius={10} background={:surface_raised} align={:center}>
+        <Icon name="file" text_size={20} text_color={:on_surface} />
+      </Box>
+      """
+    end
   end
 
   defp method_pill(method, selected) do
@@ -299,6 +394,50 @@ defmodule DukaApp.Screens.RequestFormScreen do
      |> Mob.Socket.assign(:errors, Map.delete(socket.assigns.errors, key))}
   end
 
+  # ── Attachments ─────────────────────────────────────────────────────────────
+
+  def handle_info({:tap, :attach_photo}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:pending_camera, true)
+     |> Native.request_camera()}
+  end
+
+  def handle_info({:permission, :camera, :granted}, %{assigns: %{pending_camera: true}} = socket) do
+    {:noreply, socket |> Mob.Socket.assign(:pending_camera, false) |> Native.take_photo()}
+  end
+
+  def handle_info({:permission, :camera, _denied}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:pending_camera, false)
+     |> Native.toast("Camera access is off. Allow it in Settings, or add a file instead.")}
+  end
+
+  def handle_info({:camera, :photo, %{path: path}}, socket) do
+    name = "Photo #{length(socket.assigns.attachments) + 1}.jpg"
+    {:noreply, add_attachments(socket, [{path, name, "image/jpeg"}])}
+  end
+
+  def handle_info({:tap, :attach_file}, socket), do: {:noreply, Native.pick_files(socket)}
+
+  def handle_info({:files, :picked, items}, socket) do
+    files =
+      Enum.map(items, fn item ->
+        name = field(item, :name) || "File"
+        type = picked_type(field(item, :mime), name)
+        {field(item, :path), name, type}
+      end)
+
+    {:noreply, add_attachments(socket, files)}
+  end
+
+  def handle_info({:tap, {:remove_attachment, index}}, socket) do
+    {removed, rest} = List.pop_at(socket.assigns.attachments, index)
+    if removed, do: Attachments.delete([removed])
+    {:noreply, Mob.Socket.assign(socket, :attachments, rest)}
+  end
+
   def handle_info({:tap, {:method, method}}, socket) do
     {:noreply, Mob.Socket.assign(socket, method: method, errors: %{})}
   end
@@ -307,7 +446,8 @@ defmodule DukaApp.Screens.RequestFormScreen do
     %{profile: profile, draft: draft} = socket.assigns
 
     with {:ok, attrs} <- build_attrs(socket.assigns),
-         {:ok, request} <- Requests.create_request(profile, draft, attrs) do
+         {:ok, request} <-
+           Requests.create_request(profile, draft, attrs, socket.assigns.attachments) do
       if pid = socket.assigns.notify, do: send(pid, {:request_saved, request})
 
       {:noreply,
@@ -325,10 +465,59 @@ defmodule DukaApp.Screens.RequestFormScreen do
   end
 
   def handle_info({:tap, :header_back}, socket) do
+    Attachments.delete(socket.assigns.attachments)
     {:noreply, Mob.Socket.pop_screen(socket)}
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  # Copies each file in, up to the limit, and says what couldn't be added.
+  defp add_attachments(socket, files) do
+    room = Attachments.max_count() - length(socket.assigns.attachments)
+    {fits, over} = Enum.split(files, max(room, 0))
+
+    {added, problems} =
+      Enum.reduce(fits, {[], []}, fn file, {added, problems} ->
+        case store(file) do
+          {:ok, attachment} -> {[attachment | added], problems}
+          {:error, problem} -> {added, [problem | problems]}
+        end
+      end)
+
+    problems =
+      if over == [],
+        do: Enum.reverse(problems),
+        else: Enum.reverse(problems) ++ ["Only #{Attachments.max_count()} attachments fit"]
+
+    socket =
+      Mob.Socket.assign(socket, :attachments, socket.assigns.attachments ++ Enum.reverse(added))
+
+    case problems do
+      [] -> socket
+      _ -> Native.toast(socket, Enum.join(problems, ". "))
+    end
+  end
+
+  defp store({_path, name, nil}), do: {:error, "#{name} isn't an image or PDF"}
+
+  defp store({path, name, type}) do
+    case Attachments.store(path, name, type) do
+      {:ok, attachment} -> {:ok, attachment}
+      {:error, :too_large} -> {:error, "#{name} is over 10 MB"}
+      {:error, :unsupported} -> {:error, "#{name} isn't an image or PDF"}
+      {:error, _} -> {:error, "#{name} couldn't be added"}
+    end
+  end
+
+  # Picker items arrive with atom keys from the phone and string keys from
+  # some test helpers.
+  defp field(item, key), do: Map.get(item, key) || Map.get(item, Atom.to_string(key))
+
+  # Trust a specific type from the picker; otherwise go by the extension.
+  defp picked_type(mime, name) when mime in [nil, "", "application/octet-stream"],
+    do: Attachments.content_type(name)
+
+  defp picked_type(mime, _name), do: mime
 
   @doc false
   # The form's inputs as changeset attrs. A payment's amount needs parsing

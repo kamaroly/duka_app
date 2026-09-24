@@ -132,6 +132,8 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Store
@@ -1083,21 +1085,41 @@ object MobBridge {
         val activity = activityRef?.get() ?: return
         Thread {
             try {
-                val items = uris.mapIndexed { i, uri ->
-                    val name = uri.lastPathSegment ?: "file_$i"
-                    val tmp = File(activity.cacheDir, "mob_file_${System.currentTimeMillis()}_$name")
-                    activity.contentResolver.openInputStream(uri)?.use { it.copyTo(tmp.outputStream()) }
-                    val size = tmp.length()
+                val items = JSONArray()
+                uris.forEachIndexed { i, uri ->
+                    // The provider's display name ("Invoice 104.pdf"). The URI's
+                    // last segment is often an id ("image:1234") or a path
+                    // with a "/", which broke the temp file below.
+                    val name = displayName(activity, uri) ?: "file_$i"
+                    val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                    val tmp = File(activity.cacheDir, "mob_file_${System.currentTimeMillis()}_${i}_$safe")
+                    activity.contentResolver.openInputStream(uri)?.use { input ->
+                        tmp.outputStream().use { input.copyTo(it) }
+                    }
                     val mime = activity.contentResolver.getType(uri) ?: "application/octet-stream"
-                    """{"path":"${tmp.absolutePath}","name":"$name","mime":"$mime","size":$size}"""
+                    // JSONObject escapes the name; a quote in it used to break the JSON.
+                    items.put(JSONObject()
+                        .put("path", tmp.absolutePath)
+                        .put("name", name)
+                        .put("mime", mime)
+                        .put("size", tmp.length()))
                 }
-                val json = "[${items.joinToString(",")}]"
+                val json = items.toString()
                 nativeDeliverFileResult(pid, "files", "picked", json)
             } catch (e: Exception) {
                 nativeDeliverAtom2(pid, "files", "cancelled")
             }
         }.start()
     }
+
+    private fun displayName(context: android.content.Context, uri: Uri): String? =
+        try {
+            context.contentResolver.query(
+                uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        } catch (_: Exception) {
+            null
+        }
 
     // ── Audio recording ───────────────────────────────────────────────────
     private var audioRecorder: MediaRecorder? = null
@@ -2049,8 +2071,24 @@ object MobBridge {
         activityRef?.get()?.let { activity ->
             activity.runOnUiThread {
                 try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val intent = if (url.startsWith("/")) {
+                        // A file in the app's own storage (e.g. a request's PDF):
+                        // share it through the FileProvider so the phone's viewer
+                        // app may read it, typed so the right viewer is offered.
+                        val file = File(url)
+                        val uri = FileProvider.getUriForFile(
+                            activity, activity.packageName + ".fileprovider", file)
+                        val mime = android.webkit.MimeTypeMap.getSingleton()
+                            .getMimeTypeFromExtension(file.extension.lowercase()) ?: "*/*"
+                        Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, mime)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    } else {
+                        Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
                     }
                     activity.startActivity(intent)
                 } catch (e: Exception) {
@@ -3651,6 +3689,8 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "refund"          -> Icons.Filled.CurrencyExchange
         "store"           -> Icons.Filled.Store
         "send"            -> Icons.Filled.Send
+        "attach"          -> Icons.Filled.AttachFile
+        "file"            -> Icons.Filled.Description
         else              -> Icons.Filled.QuestionMark
     }
 

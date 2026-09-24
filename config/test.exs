@@ -11,4 +11,4 @@ config :duka_app, DukaApp.Repo,
 config :duka_app, :native, false
 
 # Receipt photos written by tests go to a throwaway directory.
-config :duka_app, :photos_dir, Path.join(System.tmp_dir!(), "duka_app_test_photos")
+config :duka_app, :data_dir, Path.join(System.tmp_dir!(), "duka_app_test_data")
