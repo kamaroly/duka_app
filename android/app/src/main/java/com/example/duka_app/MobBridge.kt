@@ -130,7 +130,11 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ArrowBack
@@ -3643,6 +3647,10 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "open"            -> Icons.Filled.OpenInNew
         "verified"        -> Icons.Filled.Verified
         "download"        -> Icons.Filled.Download
+        "payments"        -> Icons.Filled.Payments
+        "refund"          -> Icons.Filled.CurrencyExchange
+        "store"           -> Icons.Filled.Store
+        "send"            -> Icons.Filled.Send
         else              -> Icons.Filled.QuestionMark
     }
 

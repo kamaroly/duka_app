@@ -13,7 +13,15 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   alias DukaApp.{Accounts, Native, Receipts, Theme}
   alias DukaApp.Components.{ActionButton, Header, ReceiptItem}
   alias DukaApp.Receipts.Photos
-  alias DukaApp.Screens.{PhoneScreen, ReceiptFormScreen, SettingsScreen}
+  alias DukaApp.Requests
+
+  alias DukaApp.Screens.{
+    PhoneScreen,
+    ReceiptFormScreen,
+    RequestFormScreen,
+    RequestsScreen,
+    SettingsScreen
+  }
 
   # The month picker offers this many months back from today.
   @months 12
@@ -37,6 +45,8 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       |> Mob.Socket.assign(:viewing_photo, false)
       |> Mob.Socket.assign(:month, Date.beginning_of_month(Receipts.today()))
       |> Mob.Socket.assign(:selected, nil)
+      # The refund already asked for the open receipt, if any.
+      |> Mob.Socket.assign(:selected_refund, nil)
       |> Mob.Socket.assign(:pending_camera, nil)
       |> Mob.Socket.assign(:locked, profile != nil and profile.app_lock)
       |> load_receipts()
@@ -126,7 +136,11 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       <Header
         kicker={Calendar.strftime(Receipts.today(), "%A, %d %b")}
         title={greeting(@profile)}
-        actions={[search_action(@searching), {"settings", "Settings", :open_settings}]}
+        actions={[
+          search_action(@searching),
+          {"payments", "Refund and payment requests", :open_requests},
+          {"settings", "Settings", :open_settings}
+        ]}
       />
       <Column fill_width={true} padding_left={18} padding_right={18}>
         <SearchField :if={@searching} query={@query} on_change={{self(), :search}} />
@@ -169,7 +183,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       />
       <Spacer :if={@receipts == []} weight={1} />
       {if not @searching, do: dock()}
-      <ReceiptDetail :if={@selected} receipt={@selected} />
+      <ReceiptDetail :if={@selected} receipt={@selected} refund={@selected_refund} />
     </Column>
     """
   end
@@ -602,6 +616,21 @@ defmodule DukaApp.Screens.ReceiptsScreen do
      |> load_receipts()}
   end
 
+  def handle_info({:tap, :open_requests}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, RequestsScreen)}
+  end
+
+  # The sheet closes on the way out; reopening the receipt looks the refund
+  # up again, so it shows the new one.
+  def handle_info({:tap, :request_refund}, socket) do
+    %{id: id} = socket.assigns.selected
+
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(selected: nil, selected_refund: nil)
+     |> Mob.Socket.push_screen(RequestFormScreen, %{receipt_id: id})}
+  end
+
   def handle_info({:tap, :open_settings}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, SettingsScreen)}
   end
@@ -695,7 +724,9 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   end
 
   defp select(socket, index) do
-    {:noreply, Mob.Socket.assign(socket, :selected, Enum.at(socket.assigns.receipts, index))}
+    receipt = Enum.at(socket.assigns.receipts, index)
+    refund = receipt && Requests.open_refund(receipt)
+    {:noreply, Mob.Socket.assign(socket, selected: receipt, selected_refund: refund)}
   end
 
   defp load_receipts(%{assigns: %{profile: nil}} = socket) do

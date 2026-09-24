@@ -21,6 +21,6 @@
   lifecycle: [],
   styles: [%{name: :mob_themes, theme: MobThemes.Obsidian}],
   default_style: :mob_themes,
-  composites: [],
-  default_font: nil
+  default_font: nil,
+  composites: []
 }

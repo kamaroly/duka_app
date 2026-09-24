@@ -2,7 +2,7 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
   @moduledoc """
   Bottom sheet for one receipt. Sends `{:tap, :view_photo}` (the photo
   thumbnail), `{:tap, :edit_receipt}`,
-  `{:tap, :delete_receipt}`, `{:tap, :verify_receipt}` (check with KRA in
+  `{:tap, :delete_receipt}`, `{:tap, :request_refund}`, `{:tap, :verify_receipt}` (check with KRA in
   the app), `{:tap, :open_on_kra}` (open KRA's page in the browser) and
   `{:tap, :close_receipt}` (or `{:dismiss, :close_receipt}` on swipe-down).
   """
@@ -10,12 +10,13 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
   import Mob.Sigil
 
   alias DukaApp.Components.{ActionButton, Header, KraBadge}
-  alias DukaApp.Receipts
+  alias DukaApp.{Receipts, Requests}
   alias DukaApp.Receipts.Photos
 
   @spec expand(map(), [map()], map()) :: map()
   def expand(props, _children, _ctx) do
     receipt = Map.fetch!(props, :receipt)
+    refund = Map.get(props, :refund)
 
     ~MOB"""
     <Sheet
@@ -75,6 +76,7 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
           {ActionButton.button("trash", "Delete", :delete_receipt, style: :danger, weight: 1)}
         </Row>
         {kra_button(receipt)}
+        {refund_section(refund)}
       </Column>
     </Sheet>
     """
@@ -153,6 +155,36 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
       true ->
         []
     end
+  end
+
+  # "Request refund", or where the refund already asked for stands.
+  defp refund_section(nil) do
+    ~MOB"""
+    <Column fill_width={true} padding_top={8}>
+      {ActionButton.button("refund", "Request refund", :request_refund, style: :secondary)}
+    </Column>
+    """
+  end
+
+  defp refund_section(refund) do
+    ~MOB"""
+    <Row
+      fill_width={true}
+      align={:center}
+      padding_top={12}
+      accessibility_label={"Refund: #{Requests.status_label(refund.status)}"}
+    >
+      <Icon name="refund" text_size={18} text_color={:muted} />
+      <Spacer size={8} />
+      <Text
+        text={"Refund #{String.downcase(Requests.status_label(refund.status))} · #{Receipts.format_short(refund.amount_cents)}"}
+        text_size={13}
+        font_weight="medium"
+        text_color={:muted}
+        weight={1}
+      />
+    </Row>
+    """
   end
 
   defp detail_row(_label, value) when value in [nil, ""], do: []
