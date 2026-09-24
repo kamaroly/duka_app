@@ -40,6 +40,7 @@ defmodule DukaApp.Receipts.Receipt do
     field :verify_url, :string
     field :photo_path, :string
     field :ocr_text, :string
+    field :verified_at, :utc_datetime
 
     belongs_to :profile, DukaApp.Accounts.Profile
 
@@ -64,7 +65,8 @@ defmodule DukaApp.Receipts.Receipt do
       :invoice_number,
       :verify_url,
       :photo_path,
-      :ocr_text
+      :ocr_text,
+      :verified_at
     ])
     |> update_change(:vendor, &String.trim/1)
     |> update_change(:description, &String.trim/1)

@@ -127,6 +127,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
@@ -3588,6 +3589,7 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "lock"            -> Icons.Filled.Lock
         "phone"           -> Icons.Filled.Phone
         "open"            -> Icons.Filled.OpenInNew
+        "verified"        -> Icons.Filled.Verified
         else              -> Icons.Filled.QuestionMark
     }
 

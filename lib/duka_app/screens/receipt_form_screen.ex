@@ -22,7 +22,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
   use Mob.Screen
 
   alias DukaApp.{Accounts, Native, Receipts}
-  alias DukaApp.Components.{ActionButton, FormField}
+  alias DukaApp.Components.{ActionButton, FormField, KraBadge}
   alias DukaApp.Receipts.{OcrParser, Photos, QrParser, Receipt}
 
   @categories Receipt.categories()
@@ -248,12 +248,16 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
       fill_width={true}
     >
       <Column fill_width={true}>
-        <Text
-          text={qr_heading(receipt)}
-          text_size={14}
-          font_weight="semibold"
-          text_color={:on_surface}
-        />
+        <Row fill_width={true} align={:center}>
+          {KraBadge.badge(receipt)}
+          <Text
+            text={qr_heading(receipt)}
+            text_size={14}
+            font_weight="semibold"
+            text_color={:on_surface}
+            weight={1}
+          />
+        </Row>
         <Spacer size={4} />
         <Text
           :if={receipt.seller_pin}
@@ -403,13 +407,18 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
       |> Enum.map(&elem(&1, 0))
       |> Enum.reject(&MapSet.member?(socket.assigns.touched, &1))
 
+    # KRA returning the receipt is what makes it verified.
+    verified_at = DateTime.truncate(DateTime.utc_now(), :second)
+
     socket =
       socket
+      |> update_receipt(&%{&1 | verified_at: verified_at})
       |> fill_untouched(details, MapSet.new())
       |> Mob.Socket.assign(:from_kra, MapSet.union(socket.assigns.from_kra, MapSet.new(filled)))
       |> Mob.Socket.assign(
         :notice,
-        "Filled in from KRA's record of this receipt. Check the details and pick a category."
+        "Verified with KRA and filled in from its record of this receipt. " <>
+          "Check the details and pick a category."
       )
 
     {:noreply, socket}
@@ -498,7 +507,8 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
           :invoice_number,
           :verify_url,
           :photo_path,
-          :ocr_text
+          :ocr_text,
+          :verified_at
         ])
 
       {:ok,

@@ -1,12 +1,14 @@
 defmodule DukaApp.Components.ReceiptItem do
   @moduledoc """
   One card in the receipts list: a tinted badge (or the receipt photo), the
-  vendor over what it was for, and the amount over the date.
+  vendor over what it was for (tagged KRA, and ticked once verified), and
+  the amount over the date.
   """
 
   import Mob.Sigil
 
   alias DukaApp.{Receipts, Theme}
+  alias DukaApp.Components.KraBadge
   alias DukaApp.Receipts.Photos
 
   @spec expand(map(), [map()], map()) :: map()
@@ -38,7 +40,16 @@ defmodule DukaApp.Components.ReceiptItem do
               max_lines={1}
             />
             <Spacer size={2} />
-            <Text text={subtitle(receipt)} text_size={12} text_color={:muted} max_lines={1} />
+            <Row fill_width={true} align={:center}>
+              {KraBadge.badge(receipt)}
+              <Text
+                text={subtitle(receipt)}
+                text_size={12}
+                text_color={:muted}
+                max_lines={1}
+                weight={1}
+              />
+            </Row>
           </Column>
           <Spacer size={12} />
           <Column>

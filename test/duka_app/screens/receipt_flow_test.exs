@@ -118,8 +118,9 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
 
       view = render_info(view, {:tap, :toggle_search})
       assert assigns(view).searching
-      # The summary card makes way for the results while searching.
+      # The summary card and the scan bar make way for the results.
       refute text(view) =~ "Spent this month"
+      refute text(view) =~ "Scan receipt"
       assert_renderable(view, extra: @extra)
 
       view = render_info(view, {:change, :search, "shell"})
@@ -128,6 +129,7 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
       view = render_info(view, {:tap, :toggle_search})
       assert %{searching: false, query: ""} = assigns(view)
       assert text(view) =~ "Spent this month"
+      assert text(view) =~ "Scan receipt"
       assert [_, _] = assigns(view).receipts
     end
 

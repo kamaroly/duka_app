@@ -28,6 +28,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       |> Mob.Socket.assign(:query, "")
       |> Mob.Socket.assign(:group, :all)
       |> Mob.Socket.assign(:searching, false)
+      |> Mob.Socket.assign(:verifying, nil)
       |> Mob.Socket.assign(:month, Date.beginning_of_month(Receipts.today()))
       |> Mob.Socket.assign(:selected, nil)
       |> Mob.Socket.assign(:pending_camera, nil)
@@ -115,7 +116,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
         padding_right={18}
       />
       <Spacer :if={@receipts == []} weight={1} />
-      {dock()}
+      {if not @searching, do: dock()}
       <ReceiptDetail :if={@selected} receipt={@selected} />
     </Column>
     """
@@ -399,7 +400,55 @@ defmodule DukaApp.Screens.ReceiptsScreen do
      |> Mob.Socket.push_screen(ReceiptFormScreen, %{id: id})}
   end
 
+  # Checks the receipt against KRA's verification page in the app. The
+  # receipt's id is kept so the answer lands on it even if the sheet has
+  # been closed in the meantime.
   def handle_info({:tap, :verify_receipt}, socket) do
+    case socket.assigns.selected do
+      %{verify_url: url, id: id} = receipt when is_binary(url) ->
+        if Receipts.verifiable?(receipt) do
+          {:noreply,
+           socket
+           |> Mob.Socket.assign(:verifying, id)
+           |> Native.toast("Checking with KRA…")
+           |> Native.lookup_kra(url)}
+        else
+          {:noreply, socket}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:kra, :result, details}, %{assigns: %{verifying: id}} = socket)
+      when is_integer(id) do
+    receipt = Receipts.get_receipt!(socket.assigns.profile, id)
+    {:ok, verified} = Receipts.mark_verified(receipt)
+
+    selected =
+      case socket.assigns.selected do
+        %{id: ^id} -> verified
+        other -> other
+      end
+
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(verifying: nil, selected: selected)
+     |> Native.success()
+     |> Native.toast(verified_message(verified, details))
+     |> load_receipts()}
+  end
+
+  def handle_info({:kra, :error, _reason}, %{assigns: %{verifying: id}} = socket)
+      when is_integer(id) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:verifying, nil)
+     |> Native.toast("Couldn't reach KRA — check your internet connection and try again")}
+  end
+
+  def handle_info({:tap, :open_on_kra}, socket) do
     case socket.assigns.selected do
       %{verify_url: url} when is_binary(url) -> Mob.Device.open_url(url)
       _ -> :ok
@@ -557,6 +606,13 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       true -> Calendar.strftime(month, "%b %Y")
     end
   end
+
+  # KRA vouches for the receipt; say so if its total differs from ours.
+  defp verified_message(receipt, %{amount_cents: cents})
+       when is_integer(cents) and cents != receipt.amount_cents,
+       do: "Verified with KRA — but KRA's total is #{Receipts.format_amount(cents)}"
+
+  defp verified_message(_receipt, _details), do: "Verified with KRA"
 
   defp list_title(:all), do: "All receipts"
   defp list_title(group), do: Receipts.group_label(group)

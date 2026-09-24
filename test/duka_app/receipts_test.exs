@@ -127,6 +127,19 @@ defmodule DukaApp.ReceiptsTest do
     assert Receipts.summary(profile).month_by_group == %{food: 159_500, fuel: 210_000, other: 0}
   end
 
+  test "KRA receipts can be verified; others are not KRA receipts", %{profile: profile} do
+    {:ok, kra} = Receipts.create_receipt(profile, Receipts.new_from_qr(@etims), attrs())
+    {:ok, manual} = Receipts.create_receipt(profile, Receipts.new_manual(), attrs())
+
+    assert Receipts.kra?(kra) and Receipts.verifiable?(kra)
+    refute Receipts.kra?(manual) or Receipts.verifiable?(manual)
+    refute Receipts.verified?(kra)
+
+    assert {:ok, verified} = Receipts.mark_verified(kra)
+    assert Receipts.verified?(verified)
+    assert Receipts.verified?(Receipts.get_receipt!(profile, kra.id))
+  end
+
   test "parse_amount handles shillings, cents and currency labels" do
     assert Receipts.parse_amount("Ksh 2,450") == {:ok, 245_000}
     assert Receipts.parse_amount("99.9") == {:ok, 9_990}

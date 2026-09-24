@@ -69,7 +69,71 @@ defmodule DukaApp.Screens.PhotoFlowTest do
                description: "Unleaded"
              } = assigns(view)
 
-      assert assigns(view).notice =~ "Filled in from KRA"
+      assert assigns(view).notice =~ "Verified with KRA and filled in"
+    end
+
+    test "a receipt filled from KRA is saved as verified", %{profile: profile} do
+      view =
+        ReceiptFormScreen
+        |> mount_screen(%{qr: @etims})
+        |> render_info({:kra, :result, @kra_details})
+
+      assert assigns(view).receipt.verified_at
+      assert_renderable(view, extra: [:header, :icon])
+
+      render_info(view, {:tap, :save})
+      assert [receipt] = Receipts.list_receipts(profile)
+      assert Receipts.verified?(receipt)
+    end
+
+    test "verifying a saved receipt checks it with KRA", %{profile: profile} do
+      {:ok, receipt} =
+        Receipts.create_receipt(profile, Receipts.new_from_qr(@etims), %{
+          date: ~D[2026-09-20],
+          vendor: "Stabex",
+          amount_cents: 200_000,
+          category: "Fuel"
+        })
+
+      refute Receipts.verified?(receipt)
+
+      view =
+        ReceiptsScreen
+        |> mount_screen()
+        |> render_info({:select, :receipts, 0})
+        |> render_info({:tap, :verify_receipt})
+
+      assert_received {:native, :lookup_kra, [@etims]}
+
+      view = render_info(view, {:kra, :result, @kra_details})
+
+      assert Receipts.verified?(assigns(view).selected)
+      assert Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
+      # The saved total differs from KRA's, so the user is told.
+      assert_received {:native, :toast, ["Verified with KRA — but KRA's total is Ksh 1,998.45"]}
+
+      assert_renderable(view,
+        extra: [:header, :icon, :receipt_item, :receipt_detail, :search_field]
+      )
+    end
+
+    test "a failed verification leaves the receipt unverified", %{profile: profile} do
+      {:ok, receipt} =
+        Receipts.create_receipt(profile, Receipts.new_from_qr(@etims), %{
+          date: ~D[2026-09-20],
+          vendor: "Stabex",
+          amount_cents: 199_845,
+          category: "Fuel"
+        })
+
+      ReceiptsScreen
+      |> mount_screen()
+      |> render_info({:select, :receipts, 0})
+      |> render_info({:tap, :verify_receipt})
+      |> render_info({:kra, :error, :timeout})
+
+      refute Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
+      assert_received {:native, :toast, ["Couldn't reach KRA" <> _]}
     end
 
     test "KRA doesn't overwrite what the user typed, and a later photo doesn't overwrite KRA" do

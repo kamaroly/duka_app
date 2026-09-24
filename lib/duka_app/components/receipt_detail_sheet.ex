@@ -1,13 +1,14 @@
 defmodule DukaApp.Components.ReceiptDetailSheet do
   @moduledoc """
   Bottom sheet for one receipt. Sends `{:tap, :edit_receipt}`,
-  `{:tap, :delete_receipt}`, `{:tap, :verify_receipt}` and
+  `{:tap, :delete_receipt}`, `{:tap, :verify_receipt}` (check with KRA in
+  the app), `{:tap, :open_on_kra}` (open KRA's page in the browser) and
   `{:tap, :close_receipt}` (or `{:dismiss, :close_receipt}` on swipe-down).
   """
 
   import Mob.Sigil
 
-  alias DukaApp.Components.{ActionButton, Header}
+  alias DukaApp.Components.{ActionButton, Header, KraBadge}
   alias DukaApp.Receipts
   alias DukaApp.Receipts.Photos
 
@@ -37,6 +38,7 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
           <Spacer size={12} />
           {Header.icon_button("close", "Close", {self(), :close_receipt})}
         </Row>
+        {kra_status(receipt)}
         <Spacer size={12} />
         <Image
           :if={receipt.photo_path}
@@ -78,15 +80,62 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
           <Spacer size={8} />
           {ActionButton.button("trash", "Delete", :delete_receipt, style: :danger, weight: 1)}
         </Row>
-        <Spacer :if={is_binary(receipt.verify_url)} size={8} />
-        {if is_binary(receipt.verify_url),
-          do:
-            ActionButton.button("open", "Verify on KRA (needs internet)", :verify_receipt,
-              style: :secondary
-            )}
+        {kra_button(receipt)}
       </Column>
     </Sheet>
     """
+  end
+
+  # "Verified with KRA · 24 Sep 2026", or a nudge to verify.
+  defp kra_status(receipt) do
+    if Receipts.kra?(receipt) do
+      ~MOB"""
+      <Row fill_width={true} align={:center} padding_top={6}>
+        {KraBadge.badge(receipt)}
+        <Text
+          text={kra_status_text(receipt)}
+          text_size={13}
+          text_color={if(Receipts.verified?(receipt), do: :secondary, else: :muted)}
+          font_weight="medium"
+          weight={1}
+        />
+      </Row>
+      """
+    else
+      []
+    end
+  end
+
+  defp kra_status_text(%{verified_at: %DateTime{} = at}),
+    do: "Verified with KRA · #{Calendar.strftime(at, "%d %b %Y")}"
+
+  defp kra_status_text(receipt) do
+    if Receipts.verifiable?(receipt),
+      do: "Not verified yet",
+      else: "KRA link"
+  end
+
+  # Unverified receipts get checked in the app; once verified (or for a KRA
+  # link whose page the app can't read) the button opens KRA's page instead.
+  defp kra_button(receipt) do
+    cond do
+      Receipts.verifiable?(receipt) and not Receipts.verified?(receipt) ->
+        ~MOB"""
+        <Column fill_width={true} padding_top={8}>
+          {ActionButton.button("verified", "Verify with KRA", :verify_receipt, style: :secondary)}
+        </Column>
+        """
+
+      is_binary(receipt.verify_url) ->
+        ~MOB"""
+        <Column fill_width={true} padding_top={8}>
+          {ActionButton.button("open", "View on KRA", :open_on_kra, style: :secondary)}
+        </Column>
+        """
+
+      true ->
+        []
+    end
   end
 
   defp detail_row(_label, value) when value in [nil, ""], do: []

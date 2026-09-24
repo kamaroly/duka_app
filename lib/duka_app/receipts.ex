@@ -136,6 +136,29 @@ defmodule DukaApp.Receipts do
     }
   end
 
+  @doc "True for a receipt whose QR code is a KRA (eTIMS, TIMS or other KRA) link."
+  @spec kra?(Receipt.t()) :: boolean()
+  def kra?(%Receipt{source: source}), do: source in ["etims", "tims", "kra"]
+
+  @doc """
+  True when KRA's page for this receipt can be read to verify it: only eTIMS
+  and TIMS links lead to a page with the receipt on it.
+  """
+  @spec verifiable?(Receipt.t()) :: boolean()
+  def verifiable?(%Receipt{source: source, verify_url: url}),
+    do: source in ["etims", "tims"] and is_binary(url)
+
+  @spec verified?(Receipt.t()) :: boolean()
+  def verified?(%Receipt{verified_at: verified_at}), do: not is_nil(verified_at)
+
+  @doc "Records that KRA's verification page returned this receipt."
+  @spec mark_verified(Receipt.t()) :: {:ok, Receipt.t()} | {:error, Ecto.Changeset.t()}
+  def mark_verified(%Receipt{} = receipt) do
+    receipt
+    |> Ecto.Changeset.change(verified_at: DateTime.truncate(DateTime.utc_now(), :second))
+    |> Repo.update()
+  end
+
   @spec new_manual() :: Receipt.t()
   def new_manual, do: %Receipt{source: "manual", date: today(), category: "Other"}
 
