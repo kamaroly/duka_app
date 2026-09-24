@@ -10,6 +10,7 @@ defmodule DukaApp.Native do
   """
 
   alias DukaApp.Receipts.KraReceipt
+  alias Mob.Storage.Android
 
   @spec toast(Mob.Socket.t(), String.t()) :: Mob.Socket.t()
   def toast(socket, message), do: call(socket, :toast, [message], &Mob.Alert.toast(&1, message))
@@ -40,16 +41,37 @@ defmodule DukaApp.Native do
   @doc """
   Looks the receipt up on KRA's verification page in the background.
   Replies `{:kra, :result, details}` (see `DukaApp.Receipts.KraReceipt`) or
-  `{:kra, :error, reason}`.
+  `{:kra, :error, reason}`. With a `ref`, the reply carries it as a fourth
+  element — `{:kra, :result, details, ref}` — so a screen with several
+  lookups in flight can tell them apart.
   """
-  @spec lookup_kra(Mob.Socket.t(), String.t()) :: Mob.Socket.t()
-  def lookup_kra(socket, url) do
-    call(socket, :lookup_kra, [url], fn socket ->
+  @spec lookup_kra(Mob.Socket.t(), String.t(), term()) :: Mob.Socket.t()
+  def lookup_kra(socket, url, ref \\ nil) do
+    args = if ref == nil, do: [url], else: [url, ref]
+
+    call(socket, :lookup_kra, args, fn socket ->
       screen = self()
-      Task.start(fn -> send(screen, kra_reply(KraReceipt.fetch(url))) end)
+      Task.start(fn -> send(screen, kra_reply(KraReceipt.fetch(url), ref)) end)
       socket
     end)
   end
+
+  @doc """
+  Copies the file at `path` into the phone's photo gallery. Replies
+  `{:storage, :saved_to_library, _}` or `{:storage, :error, :save_to_library, reason}`.
+  """
+  @spec save_to_gallery(Mob.Socket.t(), String.t()) :: Mob.Socket.t()
+  def save_to_gallery(socket, path) do
+    call(
+      socket,
+      :save_to_gallery,
+      [path],
+      &Android.save_to_media_store(&1, path, :image)
+    )
+  end
+
+  defp kra_reply(reply, nil), do: kra_reply(reply)
+  defp kra_reply(reply, ref), do: Tuple.insert_at(kra_reply(reply), 3, ref)
 
   defp kra_reply({:ok, details}), do: {:kra, :result, details}
   defp kra_reply({:error, reason}), do: {:kra, :error, reason}

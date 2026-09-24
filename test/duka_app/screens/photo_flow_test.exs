@@ -86,16 +86,45 @@ defmodule DukaApp.Screens.PhotoFlowTest do
       assert Receipts.verified?(receipt)
     end
 
-    test "verifying a saved receipt checks it with KRA", %{profile: profile} do
+    defp save_kra_receipt(profile, cents \\ 200_000) do
       {:ok, receipt} =
         Receipts.create_receipt(profile, Receipts.new_from_qr(@etims), %{
           date: ~D[2026-09-20],
           vendor: "Stabex",
-          amount_cents: 200_000,
+          amount_cents: cents,
           category: "Fuel"
         })
 
+      receipt
+    end
+
+    test "saved KRA receipts are verified quietly in the background", %{profile: profile} do
+      receipt = save_kra_receipt(profile)
       refute Receipts.verified?(receipt)
+
+      view = mount_screen(ReceiptsScreen)
+      ref = {:verify, receipt.id}
+      assert_received {:native, :lookup_kra, [@etims, ^ref]}
+
+      render_info(view, {:kra, :result, @kra_details, ref})
+      assert Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
+      refute_received {:native, :toast, _}
+    end
+
+    test "a failed background check isn't retried on the same screen", %{profile: profile} do
+      receipt = save_kra_receipt(profile)
+      view = mount_screen(ReceiptsScreen)
+      assert_received {:native, :lookup_kra, [@etims, {:verify, _}]}
+
+      render_info(view, {:kra, :error, :nxdomain, {:verify, receipt.id}})
+      refute_received {:native, :lookup_kra, _}
+      refute_received {:native, :toast, _}
+      refute Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
+    end
+
+    test "tapping Verify tells the user how it went", %{profile: profile} do
+      receipt = save_kra_receipt(profile)
+      ref = {:verify, receipt.id}
 
       view =
         ReceiptsScreen
@@ -103,9 +132,12 @@ defmodule DukaApp.Screens.PhotoFlowTest do
         |> render_info({:select, :receipts, 0})
         |> render_info({:tap, :verify_receipt})
 
-      assert_received {:native, :lookup_kra, [@etims]}
+      # The background check already running for it is reused, not repeated.
+      assert_received {:native, :lookup_kra, [@etims, ^ref]}
+      refute_received {:native, :lookup_kra, _}
+      assert_received {:native, :toast, ["Checking with KRA…"]}
 
-      view = render_info(view, {:kra, :result, @kra_details})
+      view = render_info(view, {:kra, :result, @kra_details, ref})
 
       assert Receipts.verified?(assigns(view).selected)
       assert Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
@@ -117,23 +149,48 @@ defmodule DukaApp.Screens.PhotoFlowTest do
       )
     end
 
-    test "a failed verification leaves the receipt unverified", %{profile: profile} do
-      {:ok, receipt} =
-        Receipts.create_receipt(profile, Receipts.new_from_qr(@etims), %{
-          date: ~D[2026-09-20],
-          vendor: "Stabex",
-          amount_cents: 199_845,
-          category: "Fuel"
-        })
+    test "a failed tap-to-verify says so", %{profile: profile} do
+      receipt = save_kra_receipt(profile, 199_845)
 
       ReceiptsScreen
       |> mount_screen()
       |> render_info({:select, :receipts, 0})
       |> render_info({:tap, :verify_receipt})
-      |> render_info({:kra, :error, :timeout})
+      |> render_info({:kra, :error, :timeout, {:verify, receipt.id}})
 
       refute Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
       assert_received {:native, :toast, ["Couldn't reach KRA" <> _]}
+    end
+
+    test "the photo opens full screen and can be saved to the gallery", %{profile: profile} do
+      {:ok, _} =
+        Receipts.create_receipt(profile, Receipts.new_manual(), %{
+          date: ~D[2026-09-20],
+          vendor: "Naivas",
+          amount_cents: 1_000,
+          category: "Other",
+          photo_path: "receipt-1.jpg"
+        })
+
+      view =
+        ReceiptsScreen
+        |> mount_screen()
+        |> render_info({:select, :receipts, 0})
+        |> render_info({:tap, :view_photo})
+
+      assert assigns(view).viewing_photo
+      assert_renderable(view, extra: [:header, :icon])
+
+      view = render_info(view, {:tap, :save_photo})
+      path = Photos.path("receipt-1.jpg")
+      assert_received {:native, :save_to_gallery, [^path]}
+
+      render_info(view, {:storage, :saved_to_library, path})
+      assert_received {:native, :toast, ["Saved to your phone's gallery"]}
+
+      view = render_info(view, {:tap, :close_photo})
+      refute assigns(view).viewing_photo
+      assert assigns(view).selected
     end
 
     test "KRA doesn't overwrite what the user typed, and a later photo doesn't overwrite KRA" do

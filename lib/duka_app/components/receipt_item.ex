@@ -7,8 +7,8 @@ defmodule DukaApp.Components.ReceiptItem do
 
   import Mob.Sigil
 
-  alias DukaApp.{Receipts, Theme}
   alias DukaApp.Components.KraBadge
+  alias DukaApp.{Receipts, Theme}
   alias DukaApp.Receipts.Photos
 
   @spec expand(map(), [map()], map()) :: map()

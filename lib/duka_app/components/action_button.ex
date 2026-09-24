@@ -7,7 +7,8 @@ defmodule DukaApp.Components.ActionButton do
       ActionButton.button("trash", "Delete", :delete_receipt, style: :danger, weight: 1)
 
   Styles: `:primary` (ink, the default), `:secondary` (bordered surface) and
-  `:danger`. It spans the width unless given a `weight` to share a row;
+  `:danger`. It spans the width unless given a `weight` to share a row
+  or a fixed `width`;
   `enabled: false` greys it out and ignores taps. Taps arrive as
   `{:tap, tag}`.
   """
@@ -18,7 +19,6 @@ defmodule DukaApp.Components.ActionButton do
   def button(icon, label, tag, opts \\ []) do
     {background, content, border} = colors(Keyword.get(opts, :style, :primary))
     enabled = Keyword.get(opts, :enabled, true)
-    weight = Keyword.get(opts, :weight)
 
     node = ~MOB"""
     <Box
@@ -50,10 +50,8 @@ defmodule DukaApp.Components.ActionButton do
     """
 
     # A Box fills its row on Android unless it is given a width or a weight.
-    case weight do
-      nil -> node
-      weight -> %{node | props: Map.put(node.props, :weight, weight)}
-    end
+    sizing = Keyword.take(opts, [:weight, :width]) |> Map.new()
+    %{node | props: Map.merge(node.props, sizing)}
   end
 
   defp colors(:primary), do: {:primary, :on_primary, :primary}

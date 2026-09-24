@@ -92,6 +92,12 @@ defmodule DukaApp.Receipts do
     from r in query, where: r.category in ^categories
   end
 
+  @doc "The receipt, or nil if it no longer exists."
+  @spec get_receipt(Profile.t(), integer()) :: Receipt.t() | nil
+  def get_receipt(%Profile{id: profile_id}, id) do
+    Repo.get_by(Receipt, id: id, profile_id: profile_id)
+  end
+
   @spec get_receipt!(Profile.t(), integer()) :: Receipt.t()
   def get_receipt!(%Profile{id: profile_id}, id) do
     Repo.get_by!(Receipt, id: id, profile_id: profile_id)
@@ -150,6 +156,24 @@ defmodule DukaApp.Receipts do
 
   @spec verified?(Receipt.t()) :: boolean()
   def verified?(%Receipt{verified_at: verified_at}), do: not is_nil(verified_at)
+
+  @doc """
+  The newest receipt that could be verified with KRA but hasn't been,
+  skipping the ids in `except` (ones already tried).
+  """
+  @spec next_unverified(Profile.t(), Enumerable.t()) :: Receipt.t() | nil
+  def next_unverified(%Profile{id: profile_id}, except \\ []) do
+    except = Enum.to_list(except)
+
+    Repo.one(
+      from r in Receipt,
+        where:
+          r.profile_id == ^profile_id and is_nil(r.verified_at) and
+            r.source in ["etims", "tims"] and not is_nil(r.verify_url) and r.id not in ^except,
+        order_by: [desc: r.date, desc: r.id],
+        limit: 1
+    )
+  end
 
   @doc "Records that KRA's verification page returned this receipt."
   @spec mark_verified(Receipt.t()) :: {:ok, Receipt.t()} | {:error, Ecto.Changeset.t()}

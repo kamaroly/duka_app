@@ -11,7 +11,8 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   use Mob.Screen
 
   alias DukaApp.{Accounts, Native, Receipts, Theme}
-  alias DukaApp.Components.{ActionButton, ReceiptItem}
+  alias DukaApp.Components.{ActionButton, Header, ReceiptItem}
+  alias DukaApp.Receipts.Photos
   alias DukaApp.Screens.{PhoneScreen, ReceiptFormScreen, SettingsScreen}
 
   # The month picker offers this many months back from today.
@@ -28,7 +29,12 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       |> Mob.Socket.assign(:query, "")
       |> Mob.Socket.assign(:group, :all)
       |> Mob.Socket.assign(:searching, false)
-      |> Mob.Socket.assign(:verifying, nil)
+      # KRA checks in flight, receipt id => :tap (the user asked, so say how
+      # it went) or :background (quiet). `tried` stops a background check
+      # that failed from being retried over and over on this screen.
+      |> Mob.Socket.assign(:verifying, %{})
+      |> Mob.Socket.assign(:tried, MapSet.new())
+      |> Mob.Socket.assign(:viewing_photo, false)
       |> Mob.Socket.assign(:month, Date.beginning_of_month(Receipts.today()))
       |> Mob.Socket.assign(:selected, nil)
       |> Mob.Socket.assign(:pending_camera, nil)
@@ -37,6 +43,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       |> Mob.List.put_renderer(:receipts, fn receipt ->
         ReceiptItem.expand(%{receipt: receipt}, [], %{})
       end)
+      |> verify_next()
 
     socket =
       if socket.assigns.locked,
@@ -64,6 +71,51 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       <Text text="Receipts are locked" text_size={:xl} text_color={:on_background} />
       <Spacer size={16} />
       {ActionButton.button("lock", "Unlock", :unlock)}
+    </Column>
+    """
+  end
+
+  # The receipt photo, full screen: pinch to zoom, save to the gallery.
+  def render(%{viewing_photo: true, selected: %{photo_path: photo} = receipt})
+      when is_binary(photo) do
+    ~MOB"""
+    <Column background={:background} fill_height={true}>
+      <Row
+        fill_width={true}
+        align={:center}
+        padding_top={12}
+        padding_left={18}
+        padding_right={18}
+        padding_bottom={12}
+      >
+        {Header.icon_button("close", "Close photo", {self(), :close_photo})}
+        <Spacer size={12} />
+        <Text
+          text={receipt.vendor}
+          text_size={16}
+          font_weight="semibold"
+          text_color={:on_background}
+          max_lines={1}
+          weight={1}
+        />
+        <Spacer size={12} />
+        {ActionButton.button("download", "Save", :save_photo, width: 96)}
+      </Row>
+      <Image
+        src={Photos.path(photo)}
+        zoomable={true}
+        content_mode={:fit}
+        fill_width={true}
+        weight={1}
+      />
+      <Text
+        text="Pinch to zoom · double-tap to zoom in or out"
+        text_size={12}
+        text_color={:muted}
+        text_align={:center}
+        padding_top={10}
+        padding_bottom={18}
+      />
     </Column>
     """
   end
@@ -388,7 +440,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   def handle_info({:tap, {:list, :receipts, :select, index}}, socket), do: select(socket, index)
 
   def handle_info({event, :close_receipt}, socket) when event in [:tap, :dismiss] do
-    {:noreply, Mob.Socket.assign(socket, :selected, nil)}
+    {:noreply, Mob.Socket.assign(socket, selected: nil, viewing_photo: false)}
   end
 
   def handle_info({:tap, :edit_receipt}, socket) do
@@ -400,52 +452,63 @@ defmodule DukaApp.Screens.ReceiptsScreen do
      |> Mob.Socket.push_screen(ReceiptFormScreen, %{id: id})}
   end
 
-  # Checks the receipt against KRA's verification page in the app. The
-  # receipt's id is kept so the answer lands on it even if the sheet has
-  # been closed in the meantime.
+  # Checks the receipt against KRA's verification page in the app. Each
+  # lookup carries the receipt's id, so the answer lands on the right receipt
+  # even if the sheet has been closed in the meantime.
   def handle_info({:tap, :verify_receipt}, socket) do
     case socket.assigns.selected do
-      %{verify_url: url, id: id} = receipt when is_binary(url) ->
+      %{} = receipt ->
         if Receipts.verifiable?(receipt) do
-          {:noreply,
-           socket
-           |> Mob.Socket.assign(:verifying, id)
-           |> Native.toast("Checking with KRA…")
-           |> Native.lookup_kra(url)}
+          {:noreply, socket |> Native.toast("Checking with KRA…") |> start_verify(receipt, :tap)}
         else
           {:noreply, socket}
         end
 
-      _ ->
+      nil ->
         {:noreply, socket}
     end
   end
 
-  def handle_info({:kra, :result, details}, %{assigns: %{verifying: id}} = socket)
-      when is_integer(id) do
-    receipt = Receipts.get_receipt!(socket.assigns.profile, id)
-    {:ok, verified} = Receipts.mark_verified(receipt)
+  def handle_info({:kra, :result, details, {:verify, id}}, socket) do
+    {mode, socket} = finish_verify(socket, id)
 
-    selected =
-      case socket.assigns.selected do
-        %{id: ^id} -> verified
-        other -> other
+    socket =
+      case Receipts.get_receipt(socket.assigns.profile, id) do
+        nil ->
+          socket
+
+        receipt ->
+          {:ok, verified} = Receipts.mark_verified(receipt)
+
+          selected =
+            case socket.assigns.selected do
+              %{id: ^id} -> verified
+              other -> other
+            end
+
+          socket = Mob.Socket.assign(socket, :selected, selected)
+
+          if mode == :tap,
+            do: socket |> Native.success() |> Native.toast(verified_message(verified, details)),
+            else: socket
       end
 
-    {:noreply,
-     socket
-     |> Mob.Socket.assign(verifying: nil, selected: selected)
-     |> Native.success()
-     |> Native.toast(verified_message(verified, details))
-     |> load_receipts()}
+    {:noreply, socket |> load_receipts() |> verify_next()}
   end
 
-  def handle_info({:kra, :error, _reason}, %{assigns: %{verifying: id}} = socket)
-      when is_integer(id) do
-    {:noreply,
-     socket
-     |> Mob.Socket.assign(:verifying, nil)
-     |> Native.toast("Couldn't reach KRA — check your internet connection and try again")}
+  def handle_info({:kra, :error, _reason, {:verify, id}}, socket) do
+    {mode, socket} = finish_verify(socket, id)
+
+    socket =
+      if mode == :tap,
+        do:
+          Native.toast(
+            socket,
+            "Couldn't reach KRA — check your internet connection and try again"
+          ),
+        else: socket
+
+    {:noreply, verify_next(socket)}
   end
 
   def handle_info({:tap, :open_on_kra}, socket) do
@@ -551,6 +614,34 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     {:noreply, MobBiometric.authenticate(socket, reason: "Unlock your receipts")}
   end
 
+  # ── Receipt photo viewer ────────────────────────────────────────────────────
+
+  def handle_info({:tap, :view_photo}, socket) do
+    {:noreply, Mob.Socket.assign(socket, :viewing_photo, true)}
+  end
+
+  def handle_info({:tap, :close_photo}, socket) do
+    {:noreply, Mob.Socket.assign(socket, :viewing_photo, false)}
+  end
+
+  def handle_info({:tap, :save_photo}, socket) do
+    case socket.assigns.selected do
+      %{photo_path: photo} when is_binary(photo) ->
+        {:noreply, Native.save_to_gallery(socket, Photos.path(photo))}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:storage, :saved_to_library, _path}, socket) do
+    {:noreply, Native.toast(socket, "Saved to your phone's gallery")}
+  end
+
+  def handle_info({:storage, :error, :save_to_library, _reason}, socket) do
+    {:noreply, Native.toast(socket, "Couldn't save the photo to your gallery")}
+  end
+
   def handle_info({:biometric, :success}, socket) do
     {:noreply, Mob.Socket.assign(socket, :locked, false)}
   end
@@ -565,6 +656,43 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   def handle_info({:biometric, _failure}, socket), do: {:noreply, socket}
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  # Starts a KRA check for `receipt`. A check already running for it is
+  # promoted to :tap so the user hears the answer, rather than started twice.
+  defp start_verify(socket, receipt, mode) do
+    %{verifying: verifying, tried: tried} = socket.assigns
+
+    socket =
+      Mob.Socket.assign(socket,
+        verifying: Map.put(verifying, receipt.id, mode),
+        tried: MapSet.put(tried, receipt.id)
+      )
+
+    if Map.has_key?(verifying, receipt.id),
+      do: socket,
+      else: Native.lookup_kra(socket, receipt.verify_url, {:verify, receipt.id})
+  end
+
+  defp finish_verify(socket, id) do
+    {mode, verifying} = Map.pop(socket.assigns.verifying, id)
+    {mode, Mob.Socket.assign(socket, :verifying, verifying)}
+  end
+
+  # Quietly verifies saved KRA receipts one at a time: ones saved before KRA
+  # answered (or while offline) and ones from before verification existed.
+  defp verify_next(%{assigns: %{profile: nil}} = socket), do: socket
+
+  defp verify_next(%{assigns: %{verifying: verifying}} = socket) when map_size(verifying) > 0,
+    do: socket
+
+  defp verify_next(socket) do
+    %{profile: profile, tried: tried} = socket.assigns
+
+    case Receipts.next_unverified(profile, tried) do
+      nil -> socket
+      receipt -> start_verify(socket, receipt, :background)
+    end
+  end
 
   defp select(socket, index) do
     {:noreply, Mob.Socket.assign(socket, :selected, Enum.at(socket.assigns.receipts, index))}

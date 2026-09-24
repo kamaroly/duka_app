@@ -1,6 +1,7 @@
 defmodule DukaApp.Components.ReceiptDetailSheet do
   @moduledoc """
-  Bottom sheet for one receipt. Sends `{:tap, :edit_receipt}`,
+  Bottom sheet for one receipt. Sends `{:tap, :view_photo}` (the photo
+  thumbnail), `{:tap, :edit_receipt}`,
   `{:tap, :delete_receipt}`, `{:tap, :verify_receipt}` (check with KRA in
   the app), `{:tap, :open_on_kra}` (open KRA's page in the browser) and
   `{:tap, :close_receipt}` (or `{:dismiss, :close_receipt}` on swipe-down).
@@ -26,29 +27,22 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
     >
       <Column fill_width={true} padding={20}>
         <Row fill_width={true} align={:top}>
-          <Text
-            text={receipt.vendor}
-            text_size={22}
-            font_weight="bold"
-            letter_spacing={-0.6}
-            text_color={:on_background}
-            max_lines={2}
-            weight={1}
-          />
+          {thumbnail(receipt)}
+          <Column weight={1}>
+            <Text
+              text={receipt.vendor}
+              text_size={20}
+              font_weight="bold"
+              letter_spacing={-0.5}
+              text_color={:on_background}
+              max_lines={2}
+            />
+            {kra_status(receipt)}
+          </Column>
           <Spacer size={12} />
           {Header.icon_button("close", "Close", {self(), :close_receipt})}
         </Row>
-        {kra_status(receipt)}
-        <Spacer size={12} />
-        <Image
-          :if={receipt.photo_path}
-          src={Photos.path(receipt.photo_path)}
-          fill_width={true}
-          height={300}
-          content_mode={:fit}
-          corner_radius={16}
-        />
-        <Spacer :if={receipt.photo_path} size={12} />
+        <Spacer size={14} />
         <Box
           background={:surface}
           border_color={:border}
@@ -85,6 +79,29 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
     </Sheet>
     """
   end
+
+  # The receipt photo, small; tapping it opens it full screen to zoom and save.
+  defp thumbnail(%{photo_path: photo}) when is_binary(photo) do
+    ~MOB"""
+    <Row align={:top}>
+      <Box
+        width={64}
+        height={64}
+        corner_radius={14}
+        border_color={:border}
+        border_width={1}
+        on_tap={{self(), :view_photo}}
+        accessibility_label="Receipt photo. Open to zoom and save"
+        accessibility_role={:button}
+      >
+        <Image src={Photos.path(photo)} width={64} height={64} content_mode={:fill} />
+      </Box>
+      <Spacer size={12} />
+    </Row>
+    """
+  end
+
+  defp thumbnail(_receipt), do: []
 
   # "Verified with KRA · 24 Sep 2026", or a nudge to verify.
   defp kra_status(receipt) do

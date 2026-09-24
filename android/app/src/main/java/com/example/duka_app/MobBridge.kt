@@ -42,6 +42,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -126,6 +129,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -3519,11 +3523,59 @@ private fun MobImage(node: MobNode, modifier: Modifier) {
     if (fixedHeight != null) m = m.height(fixedHeight.dp)
     if (cornerRadius > 0f)   m = m.clip(RoundedCornerShape(cornerRadius.dp))
 
+    if (boolProp(node.props, "zoomable") == true) {
+        MobZoomableImage(model, contentScale, m, src)
+        return
+    }
+
     AsyncImage(
         model              = model,
         contentDescription = null,
         contentScale       = contentScale,
         modifier           = m,
+    )
+}
+
+// `zoomable: true` on an Image: pinch to zoom (1x-5x), drag to pan while
+// zoomed, double-tap to toggle 2.5x / fit. The pan is clamped so the picture
+// can't be dragged off screen. State resets when the source changes.
+@Composable
+private fun MobZoomableImage(model: Any?, contentScale: ContentScale, modifier: Modifier, key: String?) {
+    var scale by remember(key) { mutableStateOf(1f) }
+    var offset by remember(key) { mutableStateOf(Offset.Zero) }
+    var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+
+    fun clamp(o: Offset, s: Float): Offset {
+        val maxX = (s - 1f) * size.width / 2f
+        val maxY = (s - 1f) * size.height / 2f
+        return Offset(o.x.coerceIn(-maxX, maxX), o.y.coerceIn(-maxY, maxY))
+    }
+
+    AsyncImage(
+        model              = model,
+        contentDescription = null,
+        contentScale       = contentScale,
+        modifier           = modifier
+            .clipToBounds()
+            .onSizeChanged { size = it }
+            .pointerInput(key) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    val next = (scale * zoom).coerceIn(1f, 5f)
+                    offset = clamp(offset + pan, next)
+                    scale = next
+                }
+            }
+            .pointerInput(key) {
+                detectTapGestures(onDoubleTap = {
+                    if (scale > 1f) { scale = 1f; offset = Offset.Zero } else scale = 2.5f
+                })
+            }
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = offset.x
+                translationY = offset.y
+            },
     )
 }
 
@@ -3590,6 +3642,7 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "phone"           -> Icons.Filled.Phone
         "open"            -> Icons.Filled.OpenInNew
         "verified"        -> Icons.Filled.Verified
+        "download"        -> Icons.Filled.Download
         else              -> Icons.Filled.QuestionMark
     }
 
