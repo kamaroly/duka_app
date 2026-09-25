@@ -4,8 +4,14 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   requests in one list, and the ways to add either.
 
   A receipt book connected to a team syncs with the server when this screen
-  opens and after a request is sent (see `DukaApp.Sync`); one that isn't
-  gets a short warning that opens Settings to connect.
+  opens, after a request is sent, when the app comes back to the foreground
+  or back online, and when the server pushes a notification (see
+  `DukaApp.Sync` and `DukaApp.Push`). Each receipt and request shows whether
+  the server has it yet. One that isn't connected gets a short warning that
+  opens Settings to connect.
+
+  This screen stays alive under the others, so it is the one that registers
+  for pushes and receives them.
 
   "Scan receipt" takes a photo and hands it to the confirm form, which saves
   it and reads the details off it. "Scan QR only" opens the QR scanner; a code
@@ -14,7 +20,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
 
   use Mob.Screen
 
-  alias DukaApp.{Accounts, Api, Native, Receipts, Theme}
+  alias DukaApp.{Accounts, Api, Native, Push, Receipts, Sync, Theme}
   alias DukaApp.Components.{ActionButton, Header, ReceiptItem, RequestItem}
   alias DukaApp.Receipts.{Photos, Receipt}
   alias DukaApp.Requests
@@ -57,11 +63,14 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       |> Mob.Socket.assign(:selected_request, nil)
       |> Mob.Socket.assign(:syncing, false)
       |> Mob.Socket.assign(:pending_camera, nil)
+      # When the app last came to the front: a push that arrives just after
+      # is one the person tapped (see `opened_from_tray?/1`).
+      |> Mob.Socket.assign(:resumed_at, now_ms())
       |> Mob.Socket.assign(:locked, profile != nil and profile.app_lock)
       |> load_receipts()
-      |> Mob.List.put_renderer(:receipts, &list_item/1)
       |> verify_next()
       |> start_sync()
+      |> watch_server()
 
     socket =
       if socket.assigns.locked,
@@ -570,13 +579,22 @@ defmodule DukaApp.Screens.ReceiptsScreen do
         {:noreply, socket}
 
       receipt ->
-        {:ok, _} = Receipts.delete_receipt(receipt)
-        socket = Native.toast(socket, "Receipt deleted")
+        case Receipts.delete_receipt(receipt) do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> Native.toast("Receipt deleted")
+             |> Mob.Socket.assign(:selected, nil)
+             |> load_receipts()
+             |> start_sync()}
 
-        {:noreply,
-         socket
-         |> Mob.Socket.assign(:selected, nil)
-         |> load_receipts()}
+          {:error, :decided} ->
+            {:noreply,
+             Native.toast(socket, "Your manager has decided on this receipt, so it stays")}
+
+          {:error, :has_request} ->
+            {:noreply, Native.toast(socket, "Withdraw its refund request first")}
+        end
     end
   end
 
@@ -694,7 +712,8 @@ defmodule DukaApp.Screens.ReceiptsScreen do
          socket
          |> Native.toast("Request withdrawn")
          |> Mob.Socket.assign(:selected_request, nil)
-         |> load_receipts()}
+         |> load_receipts()
+         |> start_sync()}
 
       {:error, :not_pending} ->
         {:noreply,
@@ -705,20 +724,44 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     end
   end
 
+  # One that came from the server downloads first.
   def handle_info({:tap, {:open_attachment, id}}, socket) do
     with %Request{attachments: attachments} <- socket.assigns.selected_request,
-         %Attachment{file_name: file_name} <- Enum.find(attachments, &(&1.id == id)) do
-      {:noreply, Native.open_file(socket, Attachments.path(file_name))}
+         %Attachment{} = attachment <- Enum.find(attachments, &(&1.id == id)) do
+      path = Attachments.path(attachment.file_name)
+
+      if File.regular?(path) do
+        {:noreply, Native.open_file(socket, path)}
+      else
+        profile = socket.assigns.profile
+
+        {:noreply,
+         socket
+         |> Native.toast("Downloading…")
+         |> Native.background(:attachment_fetched, fn ->
+           with :ok <- Sync.fetch_attachment(profile, attachment), do: {:ok, path}
+         end)}
+      end
     else
       _ -> {:noreply, socket}
     end
   end
 
+  def handle_info({:attachment_fetched, {:ok, path}}, socket),
+    do: {:noreply, Native.open_file(socket, path)}
+
+  def handle_info({:attachment_fetched, {:error, error}}, socket),
+    do: {:noreply, Native.toast(socket, Api.error_message(error))}
+
   # ── Server sync ────────────────────────────────────────────────────────────
 
   def handle_info({:sync, {:ok, _summary}}, socket) do
     {:noreply,
-     socket |> Mob.Socket.assign(:syncing, false) |> reload_profile() |> load_receipts()}
+     socket
+     |> Mob.Socket.assign(:syncing, false)
+     |> reload_profile()
+     |> load_receipts()
+     |> send_push_token()}
   end
 
   # The server no longer accepts the token: offer to sign in again.
@@ -734,6 +777,49 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   # Offline, or not connected: try again next time.
   def handle_info({:sync, {:error, _reason}}, socket),
     do: {:noreply, Mob.Socket.assign(socket, :syncing, false)}
+
+  # Back in the foreground or back online: catch up with the server.
+  def handle_info({:mob_device, :will_enter_foreground}, socket),
+    do: {:noreply, socket |> Mob.Socket.assign(:resumed_at, now_ms()) |> start_sync()}
+
+  def handle_info({:mob_device, :connectivity_changed, %{online: true}}, socket),
+    do: {:noreply, start_sync(socket)}
+
+  # ── Push notifications ─────────────────────────────────────────────────────
+
+  def handle_info({:permission, :notifications, :granted}, socket),
+    do: {:noreply, Native.register_push(socket)}
+
+  def handle_info({:permission, :notifications, _denied}, socket), do: {:noreply, socket}
+
+  def handle_info({:push_token, platform, token}, socket) do
+    Push.remember(platform, token)
+    {:noreply, send_push_token(socket)}
+  end
+
+  def handle_info({:push_registered, _result}, socket), do: {:noreply, socket}
+
+  def handle_info({:mob_launch_notification, json}, socket),
+    do: handle_info({:notification, Push.decode(json)}, socket)
+
+  # Something changed on the server: sync, refresh Approvals if it's open,
+  # and either open what the push is about (tapped) or say what happened.
+  def handle_info({:notification, %{source: :push} = notification}, socket) do
+    if pid = Process.whereis(ApprovalsScreen), do: send(pid, :server_changed)
+    socket = start_sync(socket)
+
+    cond do
+      not opened_from_tray?(socket) ->
+        {:noreply, Native.toast(socket, notice(notification))}
+
+      Push.screen(notification) == :approvals and Profile.manager?(socket.assigns.profile) and
+          Process.whereis(ApprovalsScreen) == nil ->
+        {:noreply, Mob.Socket.push_screen(socket, ApprovalsScreen)}
+
+      true ->
+        {:noreply, socket}
+    end
+  end
 
   # The sheet closes on the way out; reopening the receipt looks the refund
   # up again, so it shows the new one. The form reports back when it's saved.
@@ -760,9 +846,31 @@ defmodule DukaApp.Screens.ReceiptsScreen do
 
   # ── Receipt photo viewer ────────────────────────────────────────────────────
 
+  # A photo that came from the server downloads first.
   def handle_info({:tap, :view_photo}, socket) do
-    {:noreply, Mob.Socket.assign(socket, :viewing_photo, true)}
+    case socket.assigns.selected do
+      %Receipt{photo_path: photo} = receipt when is_binary(photo) ->
+        if Photos.exists?(photo) do
+          {:noreply, Mob.Socket.assign(socket, :viewing_photo, true)}
+        else
+          profile = socket.assigns.profile
+
+          {:noreply,
+           socket
+           |> Native.toast("Downloading the photo…")
+           |> Native.background(:photo_fetched, fn -> Sync.fetch_photo(profile, receipt) end)}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
   end
+
+  def handle_info({:photo_fetched, :ok}, socket),
+    do: {:noreply, Mob.Socket.assign(socket, :viewing_photo, true)}
+
+  def handle_info({:photo_fetched, {:error, error}}, socket),
+    do: {:noreply, Native.toast(socket, Api.error_message(error))}
 
   def handle_info({:tap, :close_photo}, socket) do
     {:noreply, Mob.Socket.assign(socket, :viewing_photo, false)}
@@ -849,8 +957,11 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     end
   end
 
-  defp list_item(%Request{} = request), do: RequestItem.row(request)
-  defp list_item(%Receipt{} = receipt), do: ReceiptItem.expand(%{receipt: receipt}, [], %{})
+  # `sync` marks what has reached the server, in a connected receipt book.
+  defp list_item(%Request{} = request, sync), do: RequestItem.row(request, sync: sync)
+
+  defp list_item(%Receipt{} = receipt, sync),
+    do: ReceiptItem.expand(%{receipt: receipt, sync: sync}, [], %{})
 
   defp start_sync(%{assigns: %{profile: profile, syncing: false}} = socket) do
     if Profile.connected?(profile),
@@ -859,6 +970,39 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   end
 
   defp start_sync(socket), do: socket
+
+  # A connected receipt book hears from the server: pushes (once Firebase is
+  # set up, `config :duka_app, :push`), and the app coming back to the front
+  # or back online.
+  defp watch_server(%{assigns: %{profile: profile}} = socket) do
+    cond do
+      not Profile.connected?(profile) ->
+        socket
+
+      Application.get_env(:duka_app, :push, false) ->
+        socket |> Native.watch_device() |> Native.request_notifications()
+
+      true ->
+        Native.watch_device(socket)
+    end
+  end
+
+  defp send_push_token(%{assigns: %{profile: profile}} = socket) do
+    if Profile.connected?(profile) and Push.pending?(profile),
+      do: Native.background(socket, :push_registered, fn -> Push.register(profile) end),
+      else: socket
+  end
+
+  # A tapped push opens (or brings back) the app, so it lands right after.
+  defp opened_from_tray?(socket), do: now_ms() - socket.assigns.resumed_at < 3_000
+
+  defp notice(%{title: title, body: body}) when is_binary(body) and body != "",
+    do: "#{title}: #{body}"
+
+  defp notice(%{title: title}) when is_binary(title), do: title
+  defp notice(_notification), do: "Updated from your team"
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp reload_profile(%{assigns: %{profile: %Profile{id: id}}} = socket),
     do: Mob.Socket.assign(socket, :profile, Accounts.get_profile!(id))
@@ -918,10 +1062,13 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     receipts = if group == :requests, do: [], else: Receipts.list_receipts(profile, query, group)
     requests = if group in [:all, :requests], do: matching_requests(profile, query), else: []
 
+    sync = Profile.connected?(profile)
+
     socket
     |> Mob.Socket.assign(:receipts, receipts)
     |> Mob.Socket.assign(:items, newest_first(receipts, requests))
     |> Mob.Socket.assign(:summary, Receipts.summary(profile, month))
+    |> Mob.List.put_renderer(:receipts, &list_item(&1, sync))
   end
 
   defp matching_requests(profile, query) do

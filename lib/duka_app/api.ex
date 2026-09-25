@@ -62,6 +62,18 @@ defmodule DukaApp.Api do
 
   def me(profile), do: call(:get, "/api/me", profile) |> ok_body()
 
+  # ── Push notifications ────────────────────────────────────────────────────
+
+  @doc "Tells the server this phone's push token, so it can notify the person (see `DukaApp.Push`)."
+  def register_device(profile, platform, token),
+    do:
+      call(:put, "/api/devices", profile, {:json, %{platform: platform, token: token}})
+      |> ok_body()
+
+  @doc "Asks the server to stop pushing to this phone."
+  def forget_device(profile, token),
+    do: call(:delete, "/api/devices/#{URI.encode_www_form(token)}", profile) |> ok_body()
+
   # ── The person's own receipts and requests ────────────────────────────────
 
   @doc """
@@ -136,6 +148,19 @@ defmodule DukaApp.Api do
 
     call(:post, "/api/requests", profile, {:multipart, fields ++ files}) |> ok_body()
   end
+
+  @doc "Deletes a receipt deleted on the phone. The server keeps one already decided."
+  def delete_receipt(%Profile{} = profile, client_id),
+    do: call(:delete, "/api/receipts/#{URI.encode(client_id)}", profile) |> deleted()
+
+  @doc "Withdraws a request withdrawn on the phone. The server keeps one already decided."
+  def delete_request(%Profile{} = profile, client_id),
+    do: call(:delete, "/api/requests/#{URI.encode(client_id)}", profile) |> deleted()
+
+  # The server answers 204 even for one it never had, so a 404 means a
+  # server without deletes yet.
+  defp deleted({:ok, 404, _body}), do: {:error, :not_supported}
+  defp deleted(response), do: ok_body(response)
 
   def list_receipts(profile), do: call(:get, "/api/receipts", profile) |> ok_body()
   def list_requests(profile), do: call(:get, "/api/requests", profile) |> ok_body()

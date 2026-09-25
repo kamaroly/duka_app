@@ -117,6 +117,35 @@ defmodule DukaApp.Native do
     end)
   end
 
+  @doc """
+  Asks to show notifications (a dialog the first time on Android 13+ and
+  iOS). Replies `{:permission, :notifications, :granted | :denied}`.
+  """
+  @spec request_notifications(Mob.Socket.t()) :: Mob.Socket.t()
+  def request_notifications(socket),
+    do: call(socket, :request_notifications, [], &Mob.Permissions.request(&1, :notifications))
+
+  @doc """
+  Registers for pushes. The token arrives as `{:push_token, platform, token}`,
+  and pushes from then on as `{:notification, %{source: :push}}` — both to
+  the calling screen, which should outlive the others (the home screen).
+  """
+  @spec register_push(Mob.Socket.t()) :: Mob.Socket.t()
+  def register_push(socket), do: call(socket, :register_push, [], &MobNotify.register_push/1)
+
+  @doc """
+  Subscribes the screen to the app coming back to the foreground
+  (`{:mob_device, :will_enter_foreground}`) and connectivity changes
+  (`{:mob_device, :connectivity_changed, %{online: ...}}`).
+  """
+  @spec watch_device(Mob.Socket.t()) :: Mob.Socket.t()
+  def watch_device(socket) do
+    call(socket, :watch_device, [], fn socket ->
+      Mob.Device.subscribe([:app, :network])
+      socket
+    end)
+  end
+
   defp kra_reply(reply, nil), do: kra_reply(reply)
   defp kra_reply(reply, ref), do: Tuple.insert_at(kra_reply(reply), 3, ref)
 

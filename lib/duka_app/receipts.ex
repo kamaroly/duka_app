@@ -8,7 +8,8 @@ defmodule DukaApp.Receipts do
 
   alias DukaApp.Accounts.Profile
   alias DukaApp.Receipts.{Photos, QrParser, Receipt}
-  alias DukaApp.Repo
+  alias DukaApp.{Repo, Sync}
+  alias DukaApp.Requests.Request
 
   # Nairobi is UTC+3 all year (no daylight saving), so "today" can be computed
   # without a timezone database, which the device runtime does not ship.
@@ -236,13 +237,37 @@ defmodule DukaApp.Receipts do
       else: changeset
   end
 
-  @doc "Deletes the receipt and its photo."
-  @spec delete_receipt(Receipt.t()) :: {:ok, Receipt.t()} | {:error, Ecto.Changeset.t()}
+  @doc """
+  Deletes the receipt and its photo. In a connected receipt book the next
+  sync deletes it on the server too, so only a receipt still waiting for a
+  decision, with no request for it, can go.
+  """
+  @spec delete_receipt(Receipt.t()) ::
+          {:ok, Receipt.t()} | {:error, :decided | :has_request}
   def delete_receipt(%Receipt{} = receipt) do
-    with {:ok, deleted} <- Repo.delete(receipt) do
-      Photos.delete(deleted.photo_path)
-      {:ok, deleted}
+    connected? = Profile.connected?(Repo.get(Profile, receipt.profile_id))
+
+    cond do
+      connected? and receipt.approval_status != "pending" ->
+        {:error, :decided}
+
+      connected? and Repo.exists?(from(q in Request, where: q.receipt_id == ^receipt.id)) ->
+        {:error, :has_request}
+
+      true ->
+        with {:ok, deleted} <- delete_and_remember(receipt, connected?) do
+          Photos.delete(deleted.photo_path)
+          {:ok, deleted}
+        end
     end
+  end
+
+  defp delete_and_remember(receipt, connected?) do
+    Repo.transaction(fn ->
+      deleted = Repo.delete!(receipt)
+      if connected?, do: Sync.remember_deletion(deleted.profile_id, "receipt", deleted.client_id)
+      deleted
+    end)
   end
 
   @doc """

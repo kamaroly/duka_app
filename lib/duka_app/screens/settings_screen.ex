@@ -345,11 +345,19 @@ defmodule DukaApp.Screens.SettingsScreen do
   end
 
   def handle_info({:alert, :confirm_disconnect}, socket) do
-    {:ok, profile} = Accounts.disconnect(socket.assigns.profile)
+    connected = socket.assigns.profile
+    {:ok, profile} = Accounts.disconnect(connected)
 
     {:noreply,
-     socket |> Mob.Socket.assign(:profile, profile) |> DukaApp.Native.toast("Disconnected")}
+     socket
+     |> Mob.Socket.assign(:profile, profile)
+     # Uses the sign-in token cleared above. Offline, the server keeps
+     # pushing until this phone registers for someone else.
+     |> DukaApp.Native.background(:push_forgotten, fn -> DukaApp.Push.forget(connected) end)
+     |> DukaApp.Native.toast("Disconnected")}
   end
+
+  def handle_info({:push_forgotten, _result}, socket), do: {:noreply, socket}
 
   def handle_info({:tap, :switch_phone}, socket) do
     {:noreply,

@@ -8,13 +8,17 @@ defmodule DukaApp.Components.RequestItem do
 
   import Mob.Sigil
 
-  alias DukaApp.Components.{ActionButton, Header, KraBadge}
+  alias DukaApp.Components.{ActionButton, Header, KraBadge, SyncBadge}
   alias DukaApp.{Receipts, Requests}
   alias DukaApp.Requests.{Attachment, Attachments, Request}
 
-  @doc "One card in a list: what the request is, where the money goes, the amount, its status."
-  @spec row(Request.t()) :: map()
-  def row(request) do
+  @doc """
+  One card in a list: what the request is, where the money goes, the amount,
+  its status. `sync: true` (the requester's own list, when connected) marks
+  whether the team's server has it.
+  """
+  @spec row(Request.t(), keyword()) :: map()
+  def row(request, opts \\ []) do
     ~MOB"""
     <Column fill_width={true} padding_bottom={2}>
       <Box
@@ -41,6 +45,7 @@ defmodule DukaApp.Components.RequestItem do
             />
             <Spacer size={2} />
             <Row fill_width={true} align={:center}>
+              {SyncBadge.badge(request, Keyword.get(opts, :sync, false))}
               <Text
                 text={Requests.pay_to(request)}
                 text_size={12}

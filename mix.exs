@@ -33,6 +33,9 @@ defmodule DukaApp.MixProject do
       {:mob_camera, "~> 0.1"},
       {:mob_scanner, "~> 0.1"},
       {:mob_biometric, "~> 0.1"},
+      # Push notifications from the Risiti server (see DukaApp.Push). Android
+      # also needs android/app/google-services.json from Firebase.
+      {:mob_notify, "~> 0.1"},
       # Local plugin: receipt photo processing + on-device OCR (ML Kit).
       {:mob_ocr, path: "plugins/mob_ocr"},
       {:mob_themes, "~> 0.1"},

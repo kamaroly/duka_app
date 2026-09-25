@@ -3,7 +3,8 @@
 # The activated plugins' tier-3/4 contributions, read at boot by Mob.Plugins.
 # Regenerated whenever `config :mob, :plugins` changes (the deploy/regen hook).
 %{
-  nifs: [:mob_camera_nif, :mob_scanner_nif, :mob_biometric_nif, :mob_ocr_nif],
+  nifs: [:mob_camera_nif, :mob_scanner_nif, :mob_biometric_nif, :mob_notify_nif,
+   :mob_ocr_nif],
   settings: [],
   screens: [
     %{

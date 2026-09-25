@@ -214,13 +214,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
   defp photo_section(%{receipt: receipt}) do
     ~MOB"""
     <Column fill_width={true}>
-      <Image
-        src={Photos.path(receipt.photo_path)}
-        fill_width={true}
-        height={260}
-        content_mode={:fit}
-        corner_radius={16}
-      />
+      {photo_preview(receipt.photo_path)}
       <Spacer size={8} />
       <Row fill_width={true}>
         {ActionButton.button("camera", "Retake", :take_photo, style: :secondary, weight: 1)}
@@ -229,6 +223,28 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
       </Row>
     </Column>
     """
+  end
+
+  # A photo pulled from the server isn't on the phone until it's opened.
+  defp photo_preview(photo) do
+    if Photos.exists?(photo) do
+      ~MOB"""
+      <Image
+        src={Photos.path(photo)}
+        fill_width={true}
+        height={260}
+        content_mode={:fit}
+        corner_radius={16}
+      />
+      """
+    else
+      ~MOB"""
+      <Text
+        text="The photo is kept on the server. Open the receipt to download it."
+        text_color={:muted}
+      />
+      """
+    end
   end
 
   defp qr_section(%{receipt: %Receipt{qr_content: nil}, reading: false}) do

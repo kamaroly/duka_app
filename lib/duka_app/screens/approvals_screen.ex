@@ -10,7 +10,9 @@ defmodule DukaApp.Screens.ApprovalsScreen do
 
   Everything comes from the team's server (`DukaApp.Api`), in the
   background; the decisions go straight back to it. Receipt photos and
-  attachments download when opened.
+  attachments download when opened. While it's open, a push from the server
+  (received by `ReceiptsScreen`, which sends `:server_changed` to this
+  screen's registered name) reloads the lists.
   """
 
   use Mob.Screen
@@ -44,6 +46,7 @@ defmodule DukaApp.Screens.ApprovalsScreen do
       |> Mob.List.put_renderer(:approvals, &item/1)
       |> load()
 
+    listen_for_pushes()
     {:ok, socket}
   end
 
@@ -313,6 +316,8 @@ defmodule DukaApp.Screens.ApprovalsScreen do
     {:noreply, socket |> Mob.Socket.assign(:tab, tab) |> show()}
   end
 
+  def handle_info(:server_changed, socket), do: {:noreply, load(socket)}
+
   def handle_info({:loaded, {receipts, requests}}, socket) do
     case {receipts, requests} do
       {{:ok, receipts}, {:ok, requests}} ->
@@ -434,6 +439,13 @@ defmodule DukaApp.Screens.ApprovalsScreen do
   end
 
   # Fetches both lists (only the ones this person may approve).
+  # One Approvals screen at a time; the name frees itself when it closes.
+  defp listen_for_pushes do
+    Process.register(self(), __MODULE__)
+  rescue
+    ArgumentError -> :already_open
+  end
+
   defp load(socket) do
     profile = socket.assigns.profile
 

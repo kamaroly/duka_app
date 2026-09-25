@@ -11,7 +11,7 @@ defmodule DukaApp.Requests do
 
   alias DukaApp.Accounts.Profile
   alias DukaApp.Receipts.Receipt
-  alias DukaApp.Repo
+  alias DukaApp.{Repo, Sync}
   alias DukaApp.Requests.{Attachment, Attachments, Request}
 
   # A refund in any of these states stops another one for the same receipt;
@@ -122,15 +122,28 @@ defmodule DukaApp.Requests do
     end
   end
 
-  @doc "Withdraws a request and deletes its attachments. Only a pending one can be withdrawn."
+  @doc """
+  Withdraws a request and deletes its attachments. Only a pending one can be
+  withdrawn; in a connected receipt book the next sync withdraws it on the
+  server too.
+  """
   @spec cancel_request(Request.t()) :: {:ok, Request.t()} | {:error, :not_pending}
   def cancel_request(%Request{status: "pending"} = request) do
     attachments = request |> Repo.preload(:attachments) |> Map.fetch!(:attachments)
+    connected? = Profile.connected?(Repo.get(Profile, request.profile_id))
 
-    with {:ok, deleted} <- Repo.delete(request) do
-      Attachments.delete(attachments)
-      {:ok, deleted}
-    end
+    {:ok, deleted} =
+      Repo.transaction(fn ->
+        deleted = Repo.delete!(request)
+
+        if connected?,
+          do: Sync.remember_deletion(deleted.profile_id, "request", deleted.client_id)
+
+        deleted
+      end)
+
+    Attachments.delete(attachments)
+    {:ok, deleted}
   end
 
   def cancel_request(%Request{}), do: {:error, :not_pending}

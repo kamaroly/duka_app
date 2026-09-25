@@ -3,17 +3,21 @@ defmodule DukaApp.Components.ReceiptItem do
   One card in the receipts list: a tinted badge (or the receipt photo), the
   vendor over what it was for (tagged KRA, and ticked once verified), and
   the amount over the date.
+
+  Props: `receipt`, and `sync: true` in a connected receipt book to mark
+  whether the team's server has it (see `SyncBadge`).
   """
 
   import Mob.Sigil
 
-  alias DukaApp.Components.{KraBadge, RequestItem}
+  alias DukaApp.Components.{KraBadge, RequestItem, SyncBadge}
   alias DukaApp.{Receipts, Theme}
   alias DukaApp.Receipts.Photos
 
   @spec expand(map(), [map()], map()) :: map()
   def expand(props, _children, _ctx) do
     receipt = Map.fetch!(props, :receipt)
+    sync = Map.get(props, :sync, false)
 
     # The amount column sets no text_align: Android stretches an aligned Text
     # to full width, which squeezes the vendor column to nothing.
@@ -62,12 +66,15 @@ defmodule DukaApp.Components.ReceiptItem do
               fill_width={false}
             />
             <Spacer size={3} />
-            <Text
-              text={Calendar.strftime(receipt.date, "%d %b")}
-              text_size={11}
-              text_color={:muted}
-              fill_width={false}
-            />
+            <Row align={:center}>
+              {SyncBadge.badge(receipt, sync)}
+              <Text
+                text={Calendar.strftime(receipt.date, "%d %b")}
+                text_size={11}
+                text_color={:muted}
+                fill_width={false}
+              />
+            </Row>
             {approval_tag(receipt.approval_status)}
           </Column>
         </Row>
@@ -76,15 +83,21 @@ defmodule DukaApp.Components.ReceiptItem do
     """
   end
 
-  # The receipt photo when there is one, otherwise the vendor's initials on
-  # the spending group's tint.
-  defp badge(%{photo_path: photo}) when is_binary(photo) do
-    ~MOB"""
-    <Image src={Photos.path(photo)} width={46} height={46} corner_radius={14} content_mode={:fill} />
-    """
+  # The receipt photo when it's on the phone, otherwise the vendor's initials
+  # on the spending group's tint.
+  defp badge(%{photo_path: photo} = receipt) when is_binary(photo) do
+    if Photos.exists?(photo) do
+      ~MOB"""
+      <Image src={Photos.path(photo)} width={46} height={46} corner_radius={14} content_mode={:fill} />
+      """
+    else
+      initials_badge(receipt)
+    end
   end
 
-  defp badge(receipt) do
+  defp badge(receipt), do: initials_badge(receipt)
+
+  defp initials_badge(receipt) do
     group = Receipts.group(receipt.category)
 
     ~MOB"""

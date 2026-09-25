@@ -60,6 +60,7 @@
 
     <!-- mob:plugin-permissions BEGIN (managed — regenerated each build; do not edit) -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- mob:plugin-permissions END -->
     <application
         android:label="DukaApp"
@@ -92,6 +93,23 @@
         <!-- Scheduled local notification delivery -->
         <receiver android:name=".NotificationReceiver"
             android:exported="false" />
+
+        <!-- Push notifications (mob_notify plugin): FCM delivery and token
+             refreshes. See MobFirebaseService.kt. -->
+        <service android:name=".MobFirebaseService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- mob_notify: re-arms scheduled local notifications after a reboot. -->
+        <receiver android:name="io.mob.notify.MobNotifyBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- FileProvider for camera temp files (photo / video capture) -->
         <provider

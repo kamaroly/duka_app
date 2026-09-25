@@ -136,6 +136,8 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Store
@@ -3695,6 +3697,8 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "file"            -> Icons.Filled.Description
         "approvals"       -> Icons.Filled.FactCheck
         "image"           -> Icons.Filled.Image
+        "cloud_done"      -> Icons.Filled.CloudDone
+        "cloud_upload"    -> Icons.Filled.CloudUpload
         else              -> Icons.Filled.QuestionMark
     }
 

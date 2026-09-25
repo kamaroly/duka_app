@@ -11,7 +11,7 @@ config :duka_app, ecto_repos: [DukaApp.Repo]
 config :mob, :repo, DukaApp.Repo
 
 config :mob, :extra_tags, ~w(ReceiptItem ReceiptDetail SearchField Header Icon)
-config :mob, :plugins, [:mob_camera, :mob_scanner, :mob_biometric, :mob_ocr]
+config :mob, :plugins, [:mob_camera, :mob_scanner, :mob_biometric, :mob_notify, :mob_ocr]
 
 # mob_ocr lives in plugins/ and is not signed with the mob release key.
 config :mob, :acknowledge_unsafe_plugins, [:mob_ocr]
@@ -20,5 +20,10 @@ config :mob, :acknowledge_unsafe_plugins, [:mob_ocr]
 # Users can change it in Settings. For a server on your laptop and a phone on
 # USB: `adb reverse tcp:4000 tcp:4000`, and 127.0.0.1 reaches the laptop.
 config :duka_app, :api_url, "https://expenses.zippiker.com"
+
+# Push notifications from the server (see DukaApp.Push). Needs Firebase set
+# up first: android/app/google-services.json, and the server's FCM key. Off
+# until then, because registering without Firebase crashes on Android.
+config :duka_app, :push, false
 
 import_config "#{config_env()}.exs"

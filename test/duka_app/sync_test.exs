@@ -65,7 +65,59 @@ defmodule DukaApp.SyncTest do
              "permissions" => %{"approve_receipts" => true}
            }
          }}
+
+      {:delete, _path, _} ->
+        Map.get(decisions, :delete, {204, ""})
+
+      {:get, "/api/receipts/" <> _photo, _} ->
+        {200, "server-jpeg"}
+
+      {:get, "/api/attachments/" <> _id, _} ->
+        {200, "server-pdf"}
     end)
+  end
+
+  # What the server has from another phone (or before a reinstall).
+  defp server_receipt(overrides \\ %{}) do
+    Map.merge(
+      %{
+        "id" => "r-remote",
+        "client_id" => "other-phone-1",
+        "date" => "2026-09-18",
+        "vendor" => "Quickmart",
+        "description" => nil,
+        "amount_cents" => 99_000,
+        "category" => "Office Supplies",
+        "source" => "etims",
+        "has_photo" => true,
+        "approval_status" => "approved",
+        "approval_note" => "OK",
+        "decided_at" => "2026-09-19T08:00:00Z"
+      },
+      overrides
+    )
+  end
+
+  defp server_refund do
+    %{
+      "id" => "q-remote",
+      "client_id" => "other-phone-refund",
+      "kind" => "refund",
+      "status" => "paid",
+      "amount_cents" => 99_000,
+      "method" => "send_money",
+      "phone" => "+254712345678",
+      "receipt_client_id" => "other-phone-1",
+      "inserted_at" => "2026-09-18T10:00:00Z",
+      "attachments" => [
+        %{
+          "id" => "a-1",
+          "name" => "invoice.pdf",
+          "content_type" => "application/pdf",
+          "size" => 10
+        }
+      ]
+    }
   end
 
   test "a new receipt goes up once, with its photo", %{profile: profile, receipt: receipt} do
@@ -195,6 +247,171 @@ defmodule DukaApp.SyncTest do
     assert_renderable(view,
       extra: [:header, :search_field, :receipt_item, :receipt_detail, :icon]
     )
+  end
+
+  describe "what the server has that the phone doesn't" do
+    test "is added, linked up, with photos and attachments left on the server", %{
+      profile: profile
+    } do
+      # Fresh server ids, so no file from an earlier run is already here.
+      n = System.unique_integer([:positive])
+      refund = server_refund()
+      attachments = Enum.map(refund["attachments"], &%{&1 | "id" => "a-#{n}"})
+
+      accepting_server(%{
+        receipts: [server_receipt(%{"id" => "r-#{n}"})],
+        requests: [%{refund | "attachments" => attachments}]
+      })
+
+      assert {:ok, %{pulled: 2}} = Sync.run(profile)
+
+      receipt = Repo.get_by!(Receipt, client_id: "other-phone-1")
+
+      assert %Receipt{
+               vendor: "Quickmart",
+               date: ~D[2026-09-18],
+               amount_cents: 99_000,
+               approval_status: "approved",
+               needs_push: false,
+               photo_pushed: true
+             } = receipt
+
+      refute Photos.exists?(receipt.photo_path)
+
+      request =
+        Request |> Repo.get_by!(client_id: "other-phone-refund") |> Repo.preload(:attachments)
+
+      assert %Request{status: "paid", remote_id: "q-remote"} = request
+      assert request.receipt_id == receipt.id
+      assert [%{name: "invoice.pdf"} = attachment] = request.attachments
+      assert receipt.remote_id == "r-#{n}"
+      assert attachment.remote_id == "a-#{n}"
+
+      # Nothing goes back up, and a second sync adds nothing twice.
+      assert {:ok, %{pushed: 0}} = Sync.run(profile)
+      assert Repo.aggregate(Receipt, :count) == 2
+
+      # The files come down when opened.
+      assert :ok = Sync.fetch_photo(profile, receipt)
+      assert File.read!(Photos.path(receipt.photo_path)) == "server-jpeg"
+      assert :ok = Sync.fetch_attachment(profile, attachment)
+      assert File.read!(Requests.Attachments.path(attachment.file_name)) == "server-pdf"
+    end
+  end
+
+  describe "deleting on the phone" do
+    test "deletes on the server at the next sync", %{profile: profile, receipt: receipt} do
+      accepting_server()
+      {:ok, _} = Sync.run(profile)
+
+      {:ok, _} = Receipts.delete_receipt(Repo.get!(Receipt, receipt.id))
+      accepting_server()
+      assert {:ok, _} = Sync.run(profile)
+
+      assert_received {:http, :delete, path, _}
+      assert path == "/api/receipts/#{receipt.client_id}"
+      assert Repo.aggregate(DukaApp.Sync.Deletion, :count) == 0
+    end
+
+    test "isn't undone by a pull before the server hears of it", %{
+      profile: profile,
+      receipt: receipt
+    } do
+      {:ok, _} = Receipts.delete_receipt(receipt)
+
+      # Offline for the delete: the server still lists it, and it stays gone.
+      FakeServer.stub(fn
+        {:delete, _, _} ->
+          {:error, :econnrefused}
+
+        {:get, "/api/receipts", _} ->
+          {200, %{"receipts" => [server_receipt(%{"client_id" => receipt.client_id})]}}
+      end)
+
+      assert {:error, :offline} = Sync.run(profile)
+      refute Repo.get_by(Receipt, client_id: receipt.client_id)
+      assert Repo.aggregate(DukaApp.Sync.Deletion, :count) == 1
+    end
+
+    test "is kept for later by a server that can't delete yet", %{
+      profile: profile,
+      receipt: receipt
+    } do
+      {:ok, _} = Receipts.delete_receipt(receipt)
+
+      accepting_server(%{
+        delete: {404, %{"error" => "Not found"}},
+        receipts: [server_receipt(%{"client_id" => receipt.client_id})]
+      })
+
+      assert {:ok, _} = Sync.run(profile)
+      refute Repo.get_by(Receipt, client_id: receipt.client_id)
+      assert Repo.aggregate(DukaApp.Sync.Deletion, :count) == 1
+    end
+
+    test "something the manager decided meanwhile comes back", %{
+      profile: profile,
+      receipt: receipt
+    } do
+      {:ok, _} = Receipts.delete_receipt(receipt)
+
+      accepting_server(%{
+        delete: {422, %{"errors" => %{"approval_status" => "has already been decided"}}},
+        receipts: [server_receipt(%{"client_id" => receipt.client_id})]
+      })
+
+      assert {:ok, _} = Sync.run(profile)
+
+      assert %Receipt{approval_status: "approved"} =
+               Repo.get_by!(Receipt, client_id: receipt.client_id)
+    end
+
+    test "a decided receipt, or one with a request, can't be deleted", %{
+      profile: profile,
+      receipt: receipt
+    } do
+      {:ok, _refund} =
+        Requests.create_request(profile, Requests.new_refund(profile, receipt), %{
+          kind: "refund",
+          receipt_id: receipt.id,
+          method: "send_money",
+          phone: "0712345678"
+        })
+
+      assert {:error, :has_request} = Receipts.delete_receipt(receipt)
+
+      {:ok, decided} =
+        receipt |> Ecto.Changeset.change(approval_status: "approved") |> Repo.update()
+
+      assert {:error, :decided} = Receipts.delete_receipt(decided)
+    end
+
+    test "a withdrawn request is withdrawn on the server, before its receipt goes", %{
+      profile: profile,
+      receipt: receipt
+    } do
+      {:ok, request} =
+        Requests.create_request(profile, Requests.new_refund(profile, receipt), %{
+          kind: "refund",
+          receipt_id: receipt.id,
+          method: "send_money",
+          phone: "0712345678"
+        })
+
+      accepting_server()
+      {:ok, _} = Sync.run(profile)
+
+      {:ok, _} = Requests.cancel_request(Repo.get!(Request, request.id))
+      {:ok, _} = Receipts.delete_receipt(Repo.get!(Receipt, receipt.id))
+
+      accepting_server()
+      assert {:ok, _} = Sync.run(profile)
+
+      assert_received {:http, :delete, "/api/requests/" <> first, _}
+      assert_received {:http, :delete, "/api/receipts/" <> second, _}
+      assert first == request.client_id
+      assert second == receipt.client_id
+    end
   end
 
   test "a receipt book that isn't connected doesn't try", %{profile: profile} do

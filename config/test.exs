@@ -16,3 +16,5 @@ config :duka_app, :data_dir, Path.join(System.tmp_dir!(), "duka_app_test_data")
 # Server calls go to a scripted stand-in (see test/support/fake_server.ex).
 config :duka_app, :http, DukaApp.FakeServer
 config :duka_app, :api_url, "http://risiti.test"
+
+config :duka_app, :push, true

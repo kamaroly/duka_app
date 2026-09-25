@@ -172,6 +172,8 @@ defmodule DukaApp.Screens.PhotoFlowTest do
           photo_path: "receipt-1.jpg"
         })
 
+      File.write!(Photos.path("receipt-1.jpg"), "jpeg")
+
       view =
         ReceiptsScreen
         |> mount_screen()

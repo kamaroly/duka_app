@@ -97,7 +97,7 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
         accessibility_label="Receipt photo. Open to zoom and save"
         accessibility_role={:button}
       >
-        <Image src={Photos.path(photo)} width={64} height={64} content_mode={:fill} />
+        {thumbnail_image(photo)}
       </Box>
       <Spacer size={12} />
     </Row>
@@ -105,6 +105,21 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
   end
 
   defp thumbnail(_receipt), do: []
+
+  # A photo still on the server shows an icon until it's opened.
+  defp thumbnail_image(photo) do
+    if Photos.exists?(photo) do
+      ~MOB"""
+      <Image src={Photos.path(photo)} width={64} height={64} content_mode={:fill} />
+      """
+    else
+      ~MOB"""
+      <Box width={64} height={64} align={:center}>
+        <Icon name="image" text_size={24} text_color={:muted} />
+      </Box>
+      """
+    end
+  end
 
   # "Verified with KRA · 24 Sep 2026", or a nudge to verify.
   defp kra_status(receipt) do
