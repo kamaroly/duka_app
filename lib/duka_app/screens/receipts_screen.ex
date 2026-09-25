@@ -5,7 +5,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
 
   A receipt book connected to a team syncs with the server when this screen
   opens and after a request is sent (see `DukaApp.Sync`); one that isn't
-  gets a banner offering to connect.
+  gets a short warning that opens Settings to connect.
 
   "Scan receipt" takes a photo and hands it to the confirm form, which saves
   it and reads the details off it. "Scan QR only" opens the QR scanner; a code
@@ -194,10 +194,13 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     """
   end
 
-  # Managers also get the Approvals inbox.
+  # Managers get the Approvals inbox. It also shows before connecting, when
+  # the server can't yet say who may approve; tapping it then opens Settings.
   defp header_actions(searching, profile) do
     approvals =
-      if Profile.manager?(profile), do: [{"approvals", "Approvals", :open_approvals}], else: []
+      if Profile.manager?(profile) or not Profile.connected?(profile),
+        do: [{"approvals", "Approvals", :open_approvals}],
+        else: []
 
     [search_action(searching)] ++ approvals ++ [{"settings", "Settings", :open_settings}]
   end
@@ -632,7 +635,14 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   end
 
   def handle_info({:tap, :open_approvals}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, ApprovalsScreen)}
+    if Profile.connected?(socket.assigns.profile) do
+      {:noreply, Mob.Socket.push_screen(socket, ApprovalsScreen)}
+    else
+      {:noreply,
+       socket
+       |> Native.toast("Connect to your team to see approvals")
+       |> Mob.Socket.push_screen(SettingsScreen)}
+    end
   end
 
   # ── Adding, and requests ──────────────────────────────────────────────────
@@ -705,11 +715,6 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   end
 
   # ── Server sync ────────────────────────────────────────────────────────────
-
-  def handle_info({:tap, :connect}, socket) do
-    {:noreply,
-     Mob.Socket.push_screen(socket, PhoneScreen, %{phone: socket.assigns.profile.phone})}
-  end
 
   def handle_info({:sync, {:ok, _summary}}, socket) do
     {:noreply,
@@ -860,7 +865,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
 
   defp reload_profile(socket), do: socket
 
-  # Not connected to a team: receipts stay on the phone until they are.
+  # Not connected to a team: a short warning that opens Settings to connect.
   defp connect_banner(profile) do
     if Profile.connected?(profile) do
       []
@@ -873,24 +878,22 @@ defmodule DukaApp.Screens.ReceiptsScreen do
           background={:surface}
           border_color={:border}
           border_width={1}
-          corner_radius={16}
-          padding={12}
+          corner_radius={14}
+          padding={10}
+          on_tap={{self(), :open_settings}}
+          accessibility_label="Not connected to a team. Open settings to connect."
+          accessibility_role={:button}
         >
-          <Column weight={1}>
-            <Text
-              text="Not connected to a team"
-              text_size={14}
-              font_weight="semibold"
-              text_color={:on_surface}
-            />
-            <Text
-              text="Receipts stay on this phone. Connect to send them for approval."
-              text_size={12}
-              text_color={:muted}
-            />
-          </Column>
+          <Icon name="warning" text_size={16} text_color={:error} />
           <Spacer size={8} />
-          {ActionButton.button("forward", "Connect", :connect, width: 112)}
+          <Text
+            text="Not connected to a team"
+            text_size={13}
+            font_weight="semibold"
+            text_color={:on_surface}
+            weight={1}
+          />
+          <Icon name="chevron_right" text_size={16} text_color={:muted} />
         </Row>
       </Column>
       """

@@ -5,7 +5,7 @@ defmodule DukaApp.Screens.ApprovalFlowTest do
 
   alias DukaApp.{Accounts, FakeServer}
   alias DukaApp.Accounts.Profile
-  alias DukaApp.Screens.{ApprovalsScreen, ReceiptsScreen}
+  alias DukaApp.Screens.{ApprovalsScreen, ReceiptsScreen, SettingsScreen}
 
   @extra [:header, :search_field, :receipt_item, :receipt_detail, :icon]
 
@@ -84,6 +84,18 @@ defmodule DukaApp.Screens.ApprovalFlowTest do
 
     view = ReceiptsScreen |> mount_screen() |> render_info({:tap, :open_approvals})
     assert nav_action(view) == {:push, ApprovalsScreen, %{}}
+  end
+
+  test "before connecting, Approvals and the warning open Settings" do
+    Accounts.sign_in("0712345678")
+
+    view = ReceiptsScreen |> mount_screen()
+
+    assert render_info(view, {:tap, :open_approvals}) |> nav_action() ==
+             {:push, SettingsScreen, %{}}
+
+    assert render_info(view, {:tap, :open_settings}) |> nav_action() ==
+             {:push, SettingsScreen, %{}}
   end
 
   test "the lists come from the server, with who sent each item and the token" do
