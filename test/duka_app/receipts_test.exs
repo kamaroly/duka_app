@@ -1,7 +1,8 @@
 defmodule DukaApp.ReceiptsTest do
   use DukaApp.DataCase
 
-  alias DukaApp.{Accounts, Receipts}
+  alias DukaApp.{Accounts, Receipts, Repo}
+  alias DukaApp.Receipts.Receipt
 
   doctest Receipts
 
@@ -138,6 +139,28 @@ defmodule DukaApp.ReceiptsTest do
     assert {:ok, verified} = Receipts.mark_verified(kra)
     assert Receipts.verified?(verified)
     assert Receipts.verified?(Receipts.get_receipt!(profile, kra.id))
+  end
+
+  test "changing a decided receipt's figures sends it back for approval and to the server", %{
+    profile: profile
+  } do
+    {:ok, receipt} = Receipts.create_receipt(profile, Receipts.new_manual(), attrs())
+    assert is_binary(receipt.client_id)
+
+    # As a sync would record the manager's decision.
+    approved =
+      receipt
+      |> Receipt.decision_changeset(%{approval_status: "approved"})
+      |> Ecto.Changeset.change(needs_push: false)
+      |> Repo.update!()
+
+    # A change that isn't a figure keeps the decision...
+    {:ok, same} = Receipts.update_receipt(approved, %{photo_path: "receipt-1.jpg"})
+    assert %{approval_status: "approved", needs_push: true, photo_pushed: false} = same
+
+    # ...but a new amount needs a fresh one.
+    {:ok, changed} = Receipts.update_receipt(same, %{amount_cents: 300_000})
+    assert %{approval_status: "pending", approval_note: nil, decided_at: nil} = changed
   end
 
   test "parse_amount handles shillings, cents and currency labels" do

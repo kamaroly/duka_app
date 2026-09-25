@@ -41,6 +41,18 @@ defmodule DukaApp.Receipts.Receipt do
     field :photo_path, :string
     field :ocr_text, :string
     field :verified_at, :utc_datetime
+    # The manager's decision on this expense: pending, approved or rejected.
+    field :approval_status, :string, default: "pending"
+    field :approval_note, :string
+    field :decided_at, :utc_datetime
+
+    # Server sync (see DukaApp.Sync): the phone's id for the receipt, the
+    # server's, and whether this copy has changes the server hasn't seen.
+    field :client_id, :string
+    field :remote_id, :string
+    field :needs_push, :boolean, default: true
+    field :photo_pushed, :boolean, default: false
+    field :synced_at, :utc_datetime
 
     belongs_to :profile, DukaApp.Accounts.Profile
 
@@ -49,6 +61,14 @@ defmodule DukaApp.Receipts.Receipt do
 
   @spec categories() :: [String.t()]
   def categories, do: @categories
+
+  @doc "Changeset for a manager's decision on the expense."
+  def decision_changeset(receipt, attrs) do
+    receipt
+    |> cast(attrs, [:approval_status, :approval_note, :decided_at])
+    |> validate_inclusion(:approval_status, ~w(pending approved rejected))
+    |> validate_length(:approval_note, max: 300)
+  end
 
   def changeset(receipt, attrs) do
     receipt

@@ -62,6 +62,7 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
             />
           </Column>
         </Box>
+        {approval_line(receipt)}
         <Spacer size={4} />
         {detail_row("Date", Calendar.strftime(receipt.date, "%a, %d %b %Y"))}
         {detail_row("Category", receipt.category)}
@@ -156,6 +157,40 @@ defmodule DukaApp.Components.ReceiptDetailSheet do
         []
     end
   end
+
+  # Where the manager's decision on this expense stands.
+  defp approval_line(receipt) do
+    {icon, color, text} = approval(receipt)
+
+    ~MOB"""
+    <Column fill_width={true} padding_top={10}>
+      <Row fill_width={true} align={:center}>
+        <Icon name={icon} text_size={18} text_color={color} />
+        <Spacer size={8} />
+        <Text text={text} text_size={13} font_weight="medium" text_color={color} weight={1} />
+      </Row>
+      <Text
+        :if={receipt.approval_note}
+        text={"“#{receipt.approval_note}”"}
+        text_size={13}
+        text_color={:on_background}
+        padding_left={26}
+        padding_top={2}
+      />
+    </Column>
+    """
+  end
+
+  defp approval(%{approval_status: "approved", decided_at: at}),
+    do: {"check", :secondary, "Approved by your manager#{on(at)}"}
+
+  defp approval(%{approval_status: "rejected", decided_at: at}),
+    do: {"close", :error, "Rejected by your manager#{on(at)}"}
+
+  defp approval(_receipt), do: {"approvals", :muted, "Waiting for your manager's approval"}
+
+  defp on(%DateTime{} = at), do: " · #{Calendar.strftime(at, "%d %b")}"
+  defp on(_at), do: ""
 
   # "Request refund", or where the refund already asked for stands.
   defp refund_section(nil) do

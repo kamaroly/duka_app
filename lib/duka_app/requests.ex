@@ -86,7 +86,7 @@ defmodule DukaApp.Requests do
           {:ok, Request.t()} | {:error, Ecto.Changeset.t()}
   def create_request(%Profile{id: profile_id}, %Request{} = draft, attrs, attachments \\ []) do
     changeset =
-      %{draft | profile_id: profile_id}
+      %{draft | profile_id: profile_id, client_id: draft.client_id || Ecto.UUID.generate()}
       |> Request.changeset(attrs)
       |> check_refund()
 

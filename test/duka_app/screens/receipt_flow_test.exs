@@ -21,26 +21,120 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
   end
 
   describe "phone screen" do
-    test "a valid number signs in and opens the receipts" do
+    alias DukaApp.FakeServer
+
+    # A server call's reply (DukaApp.Native.background/3) arrives in the
+    # test's mailbox; hand it to the screen as the phone would.
+    defp reply(view, tag) do
+      assert_received {^tag, result}
+      render_info(view, {tag, result})
+    end
+
+    @user %{
+      "id" => "u-1",
+      "name" => "Wanjiku",
+      "team" => "acme",
+      "permissions" => %{
+        "approve_receipts" => true,
+        "approve_requests" => false,
+        "mark_requests_paid" => false
+      }
+    }
+
+    test "the server texts a code; the code connects the receipt book" do
+      FakeServer.stub(fn
+        {:post, "/api/auth/code", _} -> {200, %{"sent" => true}}
+        {:post, "/api/auth/verify", _} -> {200, %{"token" => "tok-1", "user" => @user}}
+      end)
+
+      view =
+        PhoneScreen
+        |> mount_screen()
+        |> render_info({:change, :phone, "0712 345 678"})
+        |> render_info({:tap, :send_code})
+        |> reply(:code_sent)
+
+      assert_received {:http, :post, "/api/auth/code",
+                       %{body: {:json, %{phone: "+254712345678"}}}}
+
+      assert assigns(view).step == :code
+
+      view =
+        view
+        |> render_info({:change, :code, " 482913 "})
+        |> render_info({:tap, :verify})
+        |> reply(:verified)
+
+      assert_received {:http, :post, "/api/auth/verify", %{body: {:json, %{code: "482913"}}}}
+      assert navigated_to(view) == ReceiptsScreen
+
+      assert %{
+               phone: "+254712345678",
+               api_token: "tok-1",
+               team: "acme",
+               name: "Wanjiku",
+               can_approve_receipts: true,
+               can_approve_requests: false
+             } = Accounts.current_profile()
+    end
+
+    test "a number that isn't in a team, and a wrong code, are explained" do
+      FakeServer.stub(fn
+        {:post, "/api/auth/code", _} ->
+          {404, %{"error" => "This number isn't in a team yet. Ask your manager to add it."}}
+      end)
+
       view =
         PhoneScreen
         |> mount_screen()
         |> render_info({:change, :phone, "0712345678"})
-        |> render_info({:tap, :continue})
+        |> render_info({:tap, :send_code})
+        |> reply(:code_sent)
 
-      assert Accounts.current_profile().phone == "+254712345678"
-      assert navigated_to(view) == ReceiptsScreen
+      assert assigns(view).error =~ "Ask your manager"
+      assert assigns(view).step == :phone
+
+      FakeServer.stub(fn
+        {:post, "/api/auth/code", _} -> {200, %{"sent" => true}}
+        {:post, "/api/auth/verify", _} -> {401, %{"error" => "That code is wrong or has expired"}}
+      end)
+
+      view =
+        view
+        |> render_info({:tap, :send_code})
+        |> reply(:code_sent)
+        |> render_info({:change, :code, "000000"})
+        |> render_info({:tap, :verify})
+        |> reply(:verified)
+
+      assert assigns(view).error =~ "wrong or has expired"
+      assert Accounts.current_profile() == nil
     end
 
-    test "an invalid number shows an error and stays put" do
+    test "an invalid number is caught before calling the server" do
       view =
         PhoneScreen
         |> mount_screen()
         |> render_info({:change, :phone, "123"})
-        |> render_info({:tap, :continue})
+        |> render_info({:tap, :send_code})
 
       assert assigns(view).error =~ "Kenyan mobile number"
-      assert Accounts.current_profile() == nil
+      refute_received {:http, _, _, _}
+    end
+
+    test "offline, the receipt book can still be used without a team" do
+      view =
+        PhoneScreen
+        |> mount_screen()
+        |> render_info({:change, :phone, "0712345678"})
+        |> render_info({:tap, :send_code})
+        |> reply(:code_sent)
+
+      assert assigns(view).error =~ "Can't reach the server"
+
+      view = render_info(view, {:tap, :offline})
+      assert navigated_to(view) == ReceiptsScreen
+      assert %{phone: "+254712345678", api_token: nil} = Accounts.current_profile()
     end
   end
 

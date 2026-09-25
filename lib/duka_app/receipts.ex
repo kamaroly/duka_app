@@ -189,16 +189,51 @@ defmodule DukaApp.Receipts do
   @spec create_receipt(Profile.t(), Receipt.t(), map()) ::
           {:ok, Receipt.t()} | {:error, Ecto.Changeset.t()}
   def create_receipt(%Profile{id: profile_id}, %Receipt{} = draft, attrs) do
-    %{draft | profile_id: profile_id}
+    %{draft | profile_id: profile_id, client_id: draft.client_id || Ecto.UUID.generate()}
     |> Receipt.changeset(attrs)
     |> Repo.insert()
   end
 
+  @doc "Updates a receipt. Changing a decided one's figures sends it back for approval."
   @spec update_receipt(Receipt.t(), map()) :: {:ok, Receipt.t()} | {:error, Ecto.Changeset.t()}
   def update_receipt(%Receipt{} = receipt, attrs) do
     receipt
     |> Receipt.changeset(attrs)
+    |> reopen_if_changed()
+    |> mark_for_push()
     |> Repo.update()
+  end
+
+  # Any real change is news for the server; a new photo must be sent again.
+  defp mark_for_push(%Ecto.Changeset{changes: changes} = changeset) when changes == %{},
+    do: changeset
+
+  defp mark_for_push(changeset) do
+    changeset
+    |> Ecto.Changeset.put_change(:needs_push, true)
+    |> then(fn cs ->
+      if Map.has_key?(cs.changes, :photo_path),
+        do: Ecto.Changeset.put_change(cs, :photo_pushed, false),
+        else: cs
+    end)
+  end
+
+  # A decided expense whose figures change goes back to the manager: an
+  # approval must be for what the manager actually saw.
+  @decided_fields [:date, :vendor, :description, :amount_cents, :category]
+
+  defp reopen_if_changed(%Ecto.Changeset{data: %{approval_status: "pending"}} = changeset),
+    do: changeset
+
+  defp reopen_if_changed(changeset) do
+    if Enum.any?(@decided_fields, &Map.has_key?(changeset.changes, &1)),
+      do:
+        Ecto.Changeset.change(changeset,
+          approval_status: "pending",
+          approval_note: nil,
+          decided_at: nil
+        ),
+      else: changeset
   end
 
   @doc "Deletes the receipt and its photo."

@@ -5,7 +5,7 @@ defmodule DukaApp.Screens.RequestFlowTest do
 
   alias DukaApp.{Accounts, Receipts, Requests}
   alias DukaApp.Requests.Attachments
-  alias DukaApp.Screens.{ReceiptsScreen, RequestFormScreen, RequestsScreen}
+  alias DukaApp.Screens.{ReceiptsScreen, RequestFormScreen}
 
   @extra [:header, :search_field, :receipt_item, :receipt_detail, :icon]
 
@@ -37,7 +37,9 @@ defmodule DukaApp.Screens.RequestFlowTest do
 
     assert assigns(view).selected_refund == nil
     view = render_info(view, {:tap, :request_refund})
-    assert nav_action(view) == {:push, RequestFormScreen, %{receipt_id: receipt.id}}
+
+    assert nav_action(view) ==
+             {:push, RequestFormScreen, %{receipt_id: receipt.id, notify: self()}}
 
     form = mount_screen(RequestFormScreen, %{receipt_id: receipt.id})
     assert assigns(form).phone == "0712 345 678"
@@ -53,17 +55,23 @@ defmodule DukaApp.Screens.RequestFlowTest do
     assert [%{kind: "refund", amount_cents: 245_000, purpose: "Client lunch", status: "pending"}] =
              Requests.list_requests(profile)
 
-    view = ReceiptsScreen |> mount_screen() |> render_info({:select, :receipts, 0})
+    # The home list now has the refund too; the Food filter shows the receipt.
+    view =
+      ReceiptsScreen
+      |> mount_screen()
+      |> render_info({:tap, {:group, :food}})
+      |> render_info({:select, :receipts, 0})
+
     assert %{status: "pending"} = assigns(view).selected_refund
     assert_renderable(view, extra: @extra)
   end
 
-  test "a payment request picks how to pay and tells the requests screen", %{profile: profile} do
-    requests = mount_screen(RequestsScreen)
-    assert_renderable(requests, extra: @extra)
+  test "a payment request picks how to pay and shows up in the home list", %{profile: profile} do
+    home = mount_screen(ReceiptsScreen)
 
-    requests = render_info(requests, {:tap, :new_payment})
-    assert {:push, RequestFormScreen, %{notify: notify}} = nav_action(requests)
+    # The + button offers it; so does the action sheet it opens.
+    home = render_info(home, {:alert, :new_payment})
+    assert {:push, RequestFormScreen, %{notify: notify}} = nav_action(home)
     assert notify == self()
 
     form =
@@ -98,10 +106,17 @@ defmodule DukaApp.Screens.RequestFlowTest do
              amount_cents: 250_000
            } = request
 
-    requests = render_info(requests, {:request_saved, request})
-    assert [%{id: id}] = assigns(requests).requests
+    home = render_info(home, {:request_saved, request})
+
+    assert Enum.any?(
+             assigns(home).items,
+             &(&1.id == request.id and is_struct(&1, DukaApp.Requests.Request))
+           )
+
+    home = render_info(home, {:tap, {:group, :requests}})
+    assert [%DukaApp.Requests.Request{id: id}] = assigns(home).items
     assert id == request.id
-    assert assigns(requests).pending == %{count: 1, total: 250_000}
+    assert_renderable(home, extra: @extra)
   end
 
   test "a bad amount is reported and nothing is saved", %{profile: profile} do
@@ -128,17 +143,18 @@ defmodule DukaApp.Screens.RequestFlowTest do
       })
 
     view =
-      RequestsScreen
+      ReceiptsScreen
       |> mount_screen()
-      |> render_info({:select, :requests, 0})
+      |> render_info({:tap, {:group, :requests}})
+      |> render_info({:select, :receipts, 0})
 
-    assert assigns(view).selected
+    assert assigns(view).selected_request
     assert_renderable(view, extra: @extra)
 
     # The confirm alert is native; this is the answer it sends back.
     view = render_info(view, {:alert, :confirm_cancel})
 
-    assert assigns(view).requests == []
+    assert assigns(view).items == []
     assert Requests.list_requests(profile) == []
   end
 
@@ -199,9 +215,10 @@ defmodule DukaApp.Screens.RequestFlowTest do
       assert [%{attachments: [_, _]}] = Requests.list_requests(profile)
 
       view =
-        RequestsScreen
+        ReceiptsScreen
         |> mount_screen()
-        |> render_info({:select, :requests, 0})
+        |> render_info({:tap, {:group, :requests}})
+        |> render_info({:select, :receipts, 0})
 
       assert_renderable(view, extra: @extra)
 

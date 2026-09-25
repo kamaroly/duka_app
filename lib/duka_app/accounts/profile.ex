@@ -16,6 +16,15 @@ defmodule DukaApp.Accounts.Profile do
     field :app_lock, :boolean, default: false
     field :last_signed_in_at, :utc_datetime
 
+    # Set by SMS sign-in with the Risiti server (see DukaApp.Api). No token
+    # means the receipt book isn't connected to a team yet.
+    field :api_token, :string, redact: true
+    field :remote_user_id, :string
+    field :team, :string
+    field :can_approve_receipts, :boolean, default: false
+    field :can_approve_requests, :boolean, default: false
+    field :can_mark_paid, :boolean, default: false
+
     has_many :receipts, DukaApp.Receipts.Receipt
 
     timestamps()
@@ -43,6 +52,30 @@ defmodule DukaApp.Accounts.Profile do
     |> validate_format(:email, ~r/^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "is not a valid email")
     |> validate_format(:kra_pin, @kra_pin, message: "should look like A123456789B")
   end
+
+  @doc "Changeset for what the server said at sign-in or /api/me."
+  def server_changeset(profile, attrs) do
+    cast(profile, attrs, [
+      :api_token,
+      :remote_user_id,
+      :team,
+      :name,
+      :can_approve_receipts,
+      :can_approve_requests,
+      :can_mark_paid
+    ])
+  end
+
+  @spec connected?(t() | nil) :: boolean()
+  def connected?(%__MODULE__{api_token: token}) when is_binary(token), do: true
+  def connected?(_profile), do: false
+
+  @doc "A manager is anyone the server lets approve something."
+  @spec manager?(t() | nil) :: boolean()
+  def manager?(%__MODULE__{} = profile),
+    do: connected?(profile) and (profile.can_approve_receipts or profile.can_approve_requests)
+
+  def manager?(_profile), do: false
 
   defp normalize_phone(changeset) do
     case get_change(changeset, :phone) do

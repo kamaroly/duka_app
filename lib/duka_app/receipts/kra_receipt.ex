@@ -34,9 +34,10 @@ defmodule DukaApp.Receipts.KraReceipt do
   """
   @spec fetch(String.t()) :: {:ok, details()} | {:error, term()}
   def fetch(url) do
-    with :ok <- start_http(),
-         {:ok, html} <- get(url) do
-      parse(html)
+    case DukaApp.Http.get(url, timeout: @timeout) do
+      {:ok, 200, html} when is_binary(html) -> parse(html)
+      {:ok, status, _body} -> {:error, {:http, status}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -202,55 +203,5 @@ defmodule DukaApp.Receipts.KraReceipt do
     |> String.replace("&amp;", "&")
     |> String.replace(~r/\s+/, " ")
     |> String.trim()
-  end
-
-  # ── HTTP ───────────────────────────────────────────────────────────────────
-
-  defp start_http do
-    with {:ok, _} <- Application.ensure_all_started(:inets),
-         {:ok, _} <- Application.ensure_all_started(:ssl) do
-      :ok
-    end
-  end
-
-  defp get(url) do
-    if Mob.Certs.loaded?() do
-      resolve_host(url)
-      request(url)
-    else
-      {:error, :no_cacerts}
-    end
-  end
-
-  # On a physical Android phone the BEAM's own DNS lookup answers :nxdomain;
-  # Mob.DNS.resolve/1 asks the phone's resolver and seeds the BEAM's host
-  # table with the answer. Off the phone (no NIF) it fails harmlessly and
-  # the normal lookup is used.
-  defp resolve_host(url) do
-    case URI.parse(url) do
-      %URI{host: host} when is_binary(host) -> Mob.DNS.resolve(host)
-      _ -> :ok
-    end
-  end
-
-  defp request(url) do
-    ssl = [
-      verify: :verify_peer,
-      cacerts: :public_key.cacerts_get(),
-      depth: 4,
-      customize_hostname_check: [
-        match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
-      ]
-    ]
-
-    request = {String.to_charlist(url), [{~c"user-agent", ~c"DukaApp"}]}
-
-    case :httpc.request(:get, request, [timeout: @timeout, connect_timeout: @timeout, ssl: ssl],
-           body_format: :binary
-         ) do
-      {:ok, {{_, 200, _}, _headers, body}} -> {:ok, body}
-      {:ok, {{_, status, _}, _headers, _body}} -> {:error, {:http, status}}
-      {:error, reason} -> {:error, reason}
-    end
   end
 end

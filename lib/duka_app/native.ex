@@ -87,6 +87,36 @@ defmodule DukaApp.Native do
     end)
   end
 
+  @doc """
+  Runs `fun` (a server call) off the screen process and sends
+  `{tag, result}` back, so the screen stays responsive. Under tests it runs
+  inline and the reply is already in the mailbox, which keeps a fake server
+  and the database sandbox in the test process.
+  """
+  @spec background(Mob.Socket.t(), term(), (-> term())) :: Mob.Socket.t()
+  def background(socket, tag, fun) do
+    screen = self()
+
+    if Application.get_env(:duka_app, :native, true),
+      do: Task.start(fn -> send(screen, {tag, fun.()}) end),
+      else: send(screen, {tag, fun.()})
+
+    socket
+  end
+
+  @doc """
+  Syncs with the server in the background (see `DukaApp.Sync`); the screen
+  gets `{:sync, result}`. Under tests it sends `{:native, :sync, []}`
+  instead, and the test runs `DukaApp.Sync.run/1` itself.
+  """
+  @spec sync(Mob.Socket.t()) :: Mob.Socket.t()
+  def sync(socket) do
+    call(socket, :sync, [], fn socket ->
+      DukaApp.Sync.start(self())
+      socket
+    end)
+  end
+
   defp kra_reply(reply, nil), do: kra_reply(reply)
   defp kra_reply(reply, ref), do: Tuple.insert_at(kra_reply(reply), 3, ref)
 

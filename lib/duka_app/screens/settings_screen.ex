@@ -7,6 +7,7 @@ defmodule DukaApp.Screens.SettingsScreen do
   use Mob.Screen
 
   alias DukaApp.{Accounts, Appearance, Receipts}
+  alias DukaApp.Accounts.Profile
   alias DukaApp.Components.{ActionButton, FormField}
 
   @impl Mob.Screen
@@ -21,6 +22,7 @@ defmodule DukaApp.Screens.SettingsScreen do
      |> Mob.Socket.assign(:email, profile.email || "")
      |> Mob.Socket.assign(:kra_pin, profile.kra_pin || "")
      |> Mob.Socket.assign(:app_lock, profile.app_lock)
+     |> Mob.Socket.assign(:server_url, DukaApp.Api.base_url())
      |> Mob.Socket.assign(:appearance, Appearance.current())
      |> Mob.Socket.assign(:errors, %{})}
   end
@@ -51,6 +53,8 @@ defmodule DukaApp.Screens.SettingsScreen do
               <Text text={stats(@summary)} text_size={12} text_color={:muted} />
             </Column>
           </Box>
+          <Spacer size={16} />
+          {team_section(@profile, @server_url)}
           <Spacer size={16} />
           <Text text="Appearance" text_size={13} font_weight="medium" text_color={:on_background} />
           <Spacer size={6} />
@@ -85,11 +89,7 @@ defmodule DukaApp.Screens.SettingsScreen do
             hint: "Letter, 9 digits, letter. Handy when filing returns.",
             error: @errors[:kra_pin]
           )}
-          <Toggle
-            text="Lock with fingerprint / face"
-            value={@app_lock}
-            on_change={{self(), :app_lock}}
-          />
+          {toggle_row("Lock with fingerprint / face", @app_lock, :app_lock)}
           <Spacer size={12} />
           {ActionButton.button("check", "Save changes", :save)}
           <Spacer size={24} />
@@ -103,6 +103,114 @@ defmodule DukaApp.Screens.SettingsScreen do
         </Column>
       </Scroll>
     </Column>
+    """
+  end
+
+  # Connected: the team, what the person may approve, sync and disconnect.
+  # Not connected: connect. Either way, the server's address.
+  defp team_section(profile, server_url) do
+    ~MOB"""
+    <Column fill_width={true}>
+      <Text text="Team" text_size={13} font_weight="medium" text_color={:on_background} />
+      <Spacer size={6} />
+      <Box
+        background={:surface}
+        border_color={:border}
+        border_width={1}
+        corner_radius={16}
+        padding={14}
+        fill_width={true}
+      >
+        {team_status(profile)}
+      </Box>
+      <Spacer size={12} />
+      {FormField.field(
+        label: "Server address",
+        key: :server_url,
+        value: server_url,
+        placeholder: "e.g. https://risiti.example.com",
+        keyboard: :url,
+        submit: :save_server
+      )}
+      {ActionButton.button("check", "Save server address", :save_server, style: :secondary)}
+    </Column>
+    """
+  end
+
+  defp team_status(%Profile{} = profile) do
+    if Profile.connected?(profile) do
+      ~MOB"""
+      <Column fill_width={true}>
+        <Text
+          text={"Connected to #{profile.team}"}
+          text_size={16}
+          font_weight="semibold"
+          text_color={:on_surface}
+        />
+        <Text text={abilities(profile)} text_size={12} text_color={:muted} />
+        <Spacer size={10} />
+        <Row fill_width={true}>
+          {ActionButton.button("refresh", "Sync now", :sync_now, weight: 1)}
+          <Spacer size={8} />
+          {ActionButton.button("close", "Disconnect", :disconnect, style: :secondary, weight: 1)}
+        </Row>
+      </Column>
+      """
+    else
+      ~MOB"""
+      <Column fill_width={true}>
+        <Text
+          text="Not connected to a team"
+          text_size={16}
+          font_weight="semibold"
+          text_color={:on_surface}
+        />
+        <Text
+          text="Receipts stay on this phone. Connect with the number your manager added to send them for approval."
+          text_size={12}
+          text_color={:muted}
+        />
+        <Spacer size={10} />
+        {ActionButton.button("forward", "Connect to a team", :connect)}
+      </Column>
+      """
+    end
+  end
+
+  defp abilities(profile) do
+    case Enum.filter(
+           [
+             {profile.can_approve_receipts, "approve receipts"},
+             {profile.can_approve_requests, "approve requests"},
+             {profile.can_mark_paid, "mark requests paid"}
+           ],
+           &elem(&1, 0)
+         ) do
+      [] -> "Your receipts and requests go to your team for approval."
+      can -> "You can " <> Enum.map_join(can, ", ", &elem(&1, 1)) <> "."
+    end
+  end
+
+  # A labelled switch. The label is our own Text: Toggle's `text` prop is not
+  # rendered on Android, which left the switches unlabelled.
+  defp toggle_row(label, value, key) do
+    ~MOB"""
+    <Row
+      fill_width={true}
+      align={:center}
+      background={:surface}
+      border_color={:border}
+      border_width={1}
+      corner_radius={16}
+      padding_left={16}
+      padding_right={12}
+      padding_top={8}
+      padding_bottom={8}
+    >
+      <Text text={label} text_size={15} text_color={:on_surface} weight={1} />
+      <Spacer size={12} />
+      <Toggle value={value} on_change={{self(), key}} accessibility_label={label} />
+    </Row>
     """
   end
 
@@ -146,8 +254,8 @@ defmodule DukaApp.Screens.SettingsScreen do
     {:noreply, Mob.Socket.assign(socket, :appearance, mode)}
   end
 
-  def handle_info({:change, :app_lock, value}, socket) do
-    {:noreply, Mob.Socket.assign(socket, :app_lock, value in [true, "true"])}
+  def handle_info({:change, toggle, value}, socket) when toggle in [:app_lock] do
+    {:noreply, Mob.Socket.assign(socket, toggle, value in [true, "true"])}
   end
 
   def handle_info({:change, key, value}, socket) when key in [:name, :email, :kra_pin] do
@@ -161,7 +269,12 @@ defmodule DukaApp.Screens.SettingsScreen do
     %{profile: profile, name: name, email: email, kra_pin: kra_pin, app_lock: app_lock} =
       socket.assigns
 
-    attrs = %{name: name, email: email, kra_pin: kra_pin, app_lock: app_lock}
+    attrs = %{
+      name: name,
+      email: email,
+      kra_pin: kra_pin,
+      app_lock: app_lock
+    }
 
     case Accounts.update_settings(profile, attrs) do
       {:ok, profile} ->
@@ -177,6 +290,65 @@ defmodule DukaApp.Screens.SettingsScreen do
 
         {:noreply, Mob.Socket.assign(socket, :errors, errors)}
     end
+  end
+
+  # ── Team (server) ──────────────────────────────────────────────────────────
+
+  def handle_info({:change, :server_url, value}, socket),
+    do: {:noreply, Mob.Socket.assign(socket, :server_url, value)}
+
+  def handle_info({event, :save_server}, socket) when event in [:tap, :submit] do
+    :ok = DukaApp.Api.set_base_url(socket.assigns.server_url)
+
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:server_url, DukaApp.Api.base_url())
+     |> DukaApp.Native.toast("Server address saved")}
+  end
+
+  def handle_info({:tap, :connect}, socket) do
+    {:noreply,
+     Mob.Socket.push_screen(socket, DukaApp.Screens.PhoneScreen, %{
+       phone: socket.assigns.profile.phone
+     })}
+  end
+
+  def handle_info({:tap, :sync_now}, socket) do
+    {:noreply, socket |> DukaApp.Native.toast("Syncing…") |> DukaApp.Native.sync()}
+  end
+
+  def handle_info({:sync, {:ok, %{pushed: pushed, failed: failed}}}, socket) do
+    message =
+      case failed do
+        0 -> "Up to date (#{pushed} sent)"
+        _ -> "#{pushed} sent, #{failed} refused by the server"
+      end
+
+    profile = Accounts.get_profile!(socket.assigns.profile.id)
+    {:noreply, socket |> Mob.Socket.assign(:profile, profile) |> DukaApp.Native.toast(message)}
+  end
+
+  def handle_info({:sync, {:error, error}}, socket),
+    do: {:noreply, DukaApp.Native.toast(socket, DukaApp.Api.error_message(error))}
+
+  def handle_info({:tap, :disconnect}, socket) do
+    {:noreply,
+     Mob.Alert.alert(socket,
+       title: "Disconnect from the team?",
+       message:
+         "Receipts stay on this phone but stop going to your team until you connect again.",
+       buttons: [
+         [label: "Disconnect", style: :destructive, action: :confirm_disconnect],
+         [label: "Cancel", style: :cancel]
+       ]
+     )}
+  end
+
+  def handle_info({:alert, :confirm_disconnect}, socket) do
+    {:ok, profile} = Accounts.disconnect(socket.assigns.profile)
+
+    {:noreply,
+     socket |> Mob.Socket.assign(:profile, profile) |> DukaApp.Native.toast("Disconnected")}
   end
 
   def handle_info({:tap, :switch_phone}, socket) do

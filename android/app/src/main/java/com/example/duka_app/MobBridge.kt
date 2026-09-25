@@ -134,6 +134,8 @@ import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Store
@@ -3691,6 +3693,8 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "send"            -> Icons.Filled.Send
         "attach"          -> Icons.Filled.AttachFile
         "file"            -> Icons.Filled.Description
+        "approvals"       -> Icons.Filled.FactCheck
+        "image"           -> Icons.Filled.Image
         else              -> Icons.Filled.QuestionMark
     }
 

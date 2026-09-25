@@ -7,7 +7,7 @@ defmodule DukaApp.Components.ReceiptItem do
 
   import Mob.Sigil
 
-  alias DukaApp.Components.KraBadge
+  alias DukaApp.Components.{KraBadge, RequestItem}
   alias DukaApp.{Receipts, Theme}
   alias DukaApp.Receipts.Photos
 
@@ -68,6 +68,7 @@ defmodule DukaApp.Components.ReceiptItem do
               text_color={:muted}
               fill_width={false}
             />
+            {approval_tag(receipt.approval_status)}
           </Column>
         </Row>
       </Box>
@@ -103,6 +104,17 @@ defmodule DukaApp.Components.ReceiptItem do
     </Box>
     """
   end
+
+  # Decided expenses say so; pending ones stay quiet.
+  defp approval_tag(status) when status in ["approved", "rejected"] do
+    ~MOB"""
+    <Column padding_top={4}>
+      {RequestItem.status_pill(status)}
+    </Column>
+    """
+  end
+
+  defp approval_tag(_status), do: []
 
   defp subtitle(%{description: description, category: category})
        when is_binary(description) and description != "",

@@ -1,8 +1,13 @@
 defmodule DukaApp.Accounts do
   @moduledoc """
-  Phone-number profiles. Everything stays on the device: "signing in" picks
-  (or creates) the profile for a number and marks it as the current one, so
-  several people can keep separate receipt books on a shared phone.
+  Phone-number profiles. "Signing in" picks (or creates) the profile for a
+  number and marks it as the current one, so several people can keep
+  separate receipt books on a shared phone.
+
+  A profile can also be **connected** to a team on the Risiti server
+  (`connect/2`, after SMS sign-in): it then keeps the server's token and
+  what the person may approve, and `DukaApp.Sync` sends its receipts and
+  requests to the team.
   """
 
   import Ecto.Query, only: [from: 2]
@@ -54,6 +59,58 @@ defmodule DukaApp.Accounts do
     |> Profile.settings_changeset(attrs)
     |> Repo.update()
   end
+
+  @doc """
+  After SMS sign-in: signs in to the local profile for the number and
+  connects it to the server with the token and user it returned.
+  """
+  @spec connect(String.t(), map()) :: {:ok, Profile.t()} | {:error, Ecto.Changeset.t()}
+  def connect(phone, %{"token" => token, "user" => user}) do
+    with {:ok, profile} <- sign_in(phone) do
+      apply_server_user(profile, Map.put(user, "token", token))
+    end
+  end
+
+  @doc "Stores what the server says about the person (from sign-in or /api/me)."
+  @spec apply_server_user(Profile.t(), map()) :: {:ok, Profile.t()} | {:error, Ecto.Changeset.t()}
+  def apply_server_user(%Profile{} = profile, user) do
+    permissions = user["permissions"] || %{}
+
+    attrs =
+      %{
+        remote_user_id: user["id"],
+        team: user["team"],
+        can_approve_receipts: permissions["approve_receipts"] == true,
+        can_approve_requests: permissions["approve_requests"] == true,
+        can_mark_paid: permissions["mark_requests_paid"] == true
+      }
+      |> maybe_put(:api_token, user["token"])
+      # The server's name fills in a blank one, never overwrites the user's.
+      |> maybe_put(:name, if(blank?(profile.name), do: user["name"]))
+
+    profile
+    |> Profile.server_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc "Disconnects from the server (the receipts stay on the phone)."
+  @spec disconnect(Profile.t()) :: {:ok, Profile.t()} | {:error, Ecto.Changeset.t()}
+  def disconnect(%Profile{} = profile) do
+    profile
+    |> Ecto.Changeset.change(
+      api_token: nil,
+      team: nil,
+      can_approve_receipts: false,
+      can_approve_requests: false,
+      can_mark_paid: false
+    )
+    |> Repo.update()
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp blank?(value), do: value in [nil, ""]
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 end

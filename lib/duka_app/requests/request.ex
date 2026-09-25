@@ -44,6 +44,11 @@ defmodule DukaApp.Requests.Request do
     field :decided_at, :utc_datetime
     field :decision_note, :string
 
+    # Server sync (see DukaApp.Sync): sent once, then its status is pulled.
+    field :client_id, :string
+    field :remote_id, :string
+    field :synced_at, :utc_datetime
+
     belongs_to :profile, DukaApp.Accounts.Profile
     belongs_to :receipt, DukaApp.Receipts.Receipt
     has_many :attachments, DukaApp.Requests.Attachment

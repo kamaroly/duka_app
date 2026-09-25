@@ -15,4 +15,10 @@ config :mob, :plugins, [:mob_camera, :mob_scanner, :mob_biometric, :mob_ocr]
 
 # mob_ocr lives in plugins/ and is not signed with the mob release key.
 config :mob, :acknowledge_unsafe_plugins, [:mob_ocr]
+
+# The Risiti server the app signs in to and syncs with (see DukaApp.Api).
+# Users can change it in Settings. For a server on your laptop and a phone on
+# USB: `adb reverse tcp:4000 tcp:4000`, and 127.0.0.1 reaches the laptop.
+config :duka_app, :api_url, "http://127.0.0.1:4000"
+
 import_config "#{config_env()}.exs"
