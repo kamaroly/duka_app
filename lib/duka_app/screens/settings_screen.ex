@@ -22,7 +22,6 @@ defmodule DukaApp.Screens.SettingsScreen do
      |> Mob.Socket.assign(:email, profile.email || "")
      |> Mob.Socket.assign(:kra_pin, profile.kra_pin || "")
      |> Mob.Socket.assign(:app_lock, profile.app_lock)
-     |> Mob.Socket.assign(:server_url, DukaApp.Api.base_url())
      |> Mob.Socket.assign(:appearance, Appearance.current())
      |> Mob.Socket.assign(:errors, %{})}
   end
@@ -54,7 +53,7 @@ defmodule DukaApp.Screens.SettingsScreen do
             </Column>
           </Box>
           <Spacer size={16} />
-          {team_section(@profile, @server_url)}
+          {team_section(@profile)}
           <Spacer size={16} />
           <Text text="Appearance" text_size={13} font_weight="medium" text_color={:on_background} />
           <Spacer size={6} />
@@ -107,8 +106,8 @@ defmodule DukaApp.Screens.SettingsScreen do
   end
 
   # Connected: the team, what the person may approve, sync and disconnect.
-  # Not connected: connect. Either way, the server's address.
-  defp team_section(profile, server_url) do
+  # Not connected: connect.
+  defp team_section(profile) do
     ~MOB"""
     <Column fill_width={true}>
       <Text text="Team" text_size={13} font_weight="medium" text_color={:on_background} />
@@ -123,16 +122,6 @@ defmodule DukaApp.Screens.SettingsScreen do
       >
         {team_status(profile)}
       </Box>
-      <Spacer size={12} />
-      {FormField.field(
-        label: "Server address",
-        key: :server_url,
-        value: server_url,
-        placeholder: "e.g. https://risiti.example.com",
-        keyboard: :url,
-        submit: :save_server
-      )}
-      {ActionButton.button("check", "Save server address", :save_server, style: :secondary)}
     </Column>
     """
   end
@@ -294,18 +283,6 @@ defmodule DukaApp.Screens.SettingsScreen do
   end
 
   # ── Team (server) ──────────────────────────────────────────────────────────
-
-  def handle_info({:change, :server_url, value}, socket),
-    do: {:noreply, Mob.Socket.assign(socket, :server_url, value)}
-
-  def handle_info({event, :save_server}, socket) when event in [:tap, :submit] do
-    :ok = DukaApp.Api.set_base_url(socket.assigns.server_url)
-
-    {:noreply,
-     socket
-     |> Mob.Socket.assign(:server_url, DukaApp.Api.base_url())
-     |> DukaApp.Native.toast("Server address saved")}
-  end
 
   def handle_info({:tap, :connect}, socket) do
     {:noreply,

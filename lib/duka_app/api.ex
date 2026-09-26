@@ -10,38 +10,19 @@ defmodule DukaApp.Api do
       field → message map (or `%{"error" => message}`);
     * `{:error, {:http, status, body}}` — anything else.
 
-  The server address is `config :duka_app, :api_url`, unless the user set
-  another in Settings (kept in `Mob.State`). The HTTP module is
-  `config :duka_app, :http` so tests can stand in for the server.
+  The server is always `config :duka_app, :api_url`
+  (https://expenses.zippiker.com; tests point it at a stand-in). The HTTP
+  module is `config :duka_app, :http` so tests can stand in for the server.
   """
 
   alias DukaApp.Accounts.Profile
   alias DukaApp.Receipts.Photos
   alias DukaApp.Transactions.{Attachments, Transaction}
 
-  @server_key :server_url
-
   # ── Server address ─────────────────────────────────────────────────────────
 
   @spec base_url() :: String.t()
-  def base_url do
-    case saved_url() do
-      url when is_binary(url) and url != "" -> url
-      _ -> Application.get_env(:duka_app, :api_url, "http://127.0.0.1:4000")
-    end
-  end
-
-  # Mob.State's store isn't open outside the app (e.g. a `mix run` script);
-  # the configured address is used then.
-  defp saved_url do
-    Mob.State.get(@server_key, nil)
-  rescue
-    ArgumentError -> nil
-  end
-
-  @spec set_base_url(String.t()) :: :ok
-  def set_base_url(url),
-    do: Mob.State.put(@server_key, url |> String.trim() |> String.trim_trailing("/"))
+  def base_url, do: Application.fetch_env!(:duka_app, :api_url)
 
   # ── Sign-in ────────────────────────────────────────────────────────────────
 
