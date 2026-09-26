@@ -4,6 +4,7 @@ defmodule DukaApp.Screens.RequestFlowTest do
   use Mob.ScreenCase, async: false
 
   alias DukaApp.{Accounts, Transactions}
+  alias DukaApp.Components.TransactionSheet
   alias DukaApp.Screens.{ReceiptFormScreen, ReceiptsScreen, RequestFormScreen}
   alias DukaApp.Transactions.{Attachments, Transaction}
 
@@ -228,7 +229,7 @@ defmodule DukaApp.Screens.RequestFlowTest do
   # Everything the transaction sheet says, as one string.
   defp sheet_text(transaction, personal) do
     %{transaction: transaction, personal: personal}
-    |> DukaApp.Components.TransactionSheet.expand([], %{})
+    |> TransactionSheet.expand([], %{})
     |> texts()
     |> Enum.join(" ")
   end
