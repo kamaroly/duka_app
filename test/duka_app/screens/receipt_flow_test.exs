@@ -80,6 +80,80 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
              } = Accounts.current_profile()
     end
 
+    test "someone new signs up with Google, giving their M-Pesa number" do
+      FakeServer.stub(fn
+        {:post, "/api/auth/google", _} ->
+          {200,
+           %{"needs_registration" => true, "signup_token" => "signup-g", "name" => "Achieng O."}}
+
+        {:post, "/api/auth/register", _} ->
+          {201,
+           %{
+             "token" => "tok-g",
+             "user" => %{"id" => "u-g", "team" => "p_x", "team_kind" => "personal"}
+           }}
+      end)
+
+      view = PhoneScreen |> mount_screen() |> render_info({:tap, :google})
+      assert_received {:native, :google_sign_in, []}
+
+      view =
+        view
+        |> render_info({:google, :result, ~s({"id_token":"google-jwt","email":"a@gmail.com"})})
+        |> reply(:google_verified)
+
+      assert_received {:http, :post, "/api/auth/google",
+                       %{body: {:json, %{id_token: "google-jwt"}}}}
+
+      assert %{step: :register, name: "Achieng O.", via: :google} = assigns(view)
+      assert_renderable(view, extra: @extra)
+
+      # The M-Pesa number is needed: the book is kept under it.
+      view = render_info(view, {:tap, :register})
+      assert assigns(view).error =~ "M-Pesa number"
+
+      view =
+        view
+        |> render_info({:change, :phone, "0712 345 678"})
+        |> render_info({:tap, :register})
+        |> reply(:registered)
+
+      assert navigated_to(view) == ReceiptsScreen
+      assert %{phone: "+254712345678", api_token: "tok-g"} = Accounts.current_profile()
+    end
+
+    test "Google signs in someone the server knows; cancelling does nothing" do
+      FakeServer.stub(fn
+        {:post, "/api/auth/google", _} ->
+          {200, %{"token" => "tok-k", "user" => Map.put(@user, "phone", nil)}}
+      end)
+
+      view =
+        PhoneScreen
+        |> mount_screen()
+        |> render_info({:tap, :google})
+        |> render_info({:google, :error, ~s({"message":"cancelled"})})
+
+      assert %{busy: false, error: nil, step: :phone} = assigns(view)
+
+      view =
+        view
+        |> render_info({:tap, :google})
+        |> render_info({:google, :result, ~s({"id_token":"google-jwt"})})
+        |> reply(:google_verified)
+
+      # No number confirmed by SMS on the server: which is theirs?
+      assert assigns(view).step == :google_phone
+
+      view =
+        view
+        |> render_info({:change, :phone, "0722 000 111"})
+        |> render_info({:tap, :finish_google})
+
+      assert navigated_to(view) == ReceiptsScreen
+      assert %{phone: "+254722000111", api_token: "tok-k"} = Accounts.current_profile()
+    end
+
     test "a refused code, and a wrong code, are explained" do
       FakeServer.stub(fn
         {:post, "/api/auth/code", _} ->

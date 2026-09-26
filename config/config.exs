@@ -13,8 +13,9 @@ config :mob, :repo, DukaApp.Repo
 config :mob, :extra_tags, ~w(ReceiptItem ReceiptDetail SearchField Header Icon)
 config :mob, :plugins, [:mob_camera, :mob_scanner, :mob_biometric, :mob_notify, :mob_ocr]
 
-# mob_ocr lives in plugins/ and is not signed with the mob release key.
-config :mob, :acknowledge_unsafe_plugins, [:mob_ocr]
+# mob_ocr and mob_google live in plugins/ and are not signed with the mob
+# release key.
+config :mob, :acknowledge_unsafe_plugins, [:mob_ocr, :mob_google]
 
 # The Risiti server the app signs in to and syncs with (see DukaApp.Api).
 # Users can change it in Settings. For a server on your laptop and a phone on
@@ -25,5 +26,12 @@ config :duka_app, :api_url, "https://expenses.zippiker.com"
 # up first: android/app/google-services.json, and the server's FCM key. Off
 # until then, because registering without Firebase crashes on Android.
 config :duka_app, :push, false
+
+# Sign in with Google (see MobGoogle): the *Web* OAuth client id from the
+# server's Google Cloud project — the same one in the server's
+# GOOGLE_CLIENT_IDS. The app must also be registered there as an Android
+# client (package com.example.duka_app and the signing key's SHA-1). Until
+# it's set the phone screen doesn't offer Google.
+config :duka_app, :google_client_id, nil
 
 import_config "#{config_env()}.exs"

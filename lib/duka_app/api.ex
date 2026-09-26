@@ -61,7 +61,22 @@ defmodule DukaApp.Api do
   end
 
   @doc """
-  Signs up a new number `verify/2` confirmed: the person's `name`, and a
+  Signs in with the ID token Sign in with Google gave the phone. A new
+  person gets `%{"needs_registration" => true, "signup_token" => ..., "name" => ...}`.
+  """
+  def google(id_token) do
+    case post("/api/auth/google", nil, {:json, %{id_token: id_token}}) |> ok_body() do
+      # Here a 401 means Google's answer wasn't accepted, not a lapsed sign-in.
+      {:error, :unauthorized} ->
+        {:error, {:invalid, %{"error" => "That Google sign-in didn't work. Try again."}}}
+
+      other ->
+        other
+    end
+  end
+
+  @doc """
+  Signs up someone new that `verify/2` or `google/1` confirmed: the person's `name`, and a
   `team_name` for a business (blank for a free personal book).
   """
   def register(signup_token, name, team_name) do

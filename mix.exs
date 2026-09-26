@@ -38,6 +38,8 @@ defmodule DukaApp.MixProject do
       {:mob_notify, "~> 0.1"},
       # Local plugin: receipt photo processing + on-device OCR (ML Kit).
       {:mob_ocr, path: "plugins/mob_ocr"},
+      # Local plugin: Sign in with Google (Android Credential Manager).
+      {:mob_google, path: "plugins/mob_google"},
       {:mob_themes, "~> 0.1"},
       # Code quality — Credo + ex_slop (catches AI-generated patterns
       # like blanket rescue, narrator docs, redundant Enum chains, etc).

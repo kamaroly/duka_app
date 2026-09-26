@@ -18,3 +18,6 @@ config :duka_app, :http, DukaApp.FakeServer
 config :duka_app, :api_url, "http://risiti.test"
 
 config :duka_app, :push, true
+
+# Sign in with Google is offered (the native call is faked, as above).
+config :duka_app, :google_client_id, "risiti-web.apps.googleusercontent.com"

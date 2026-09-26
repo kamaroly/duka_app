@@ -8,6 +8,12 @@ defmodule DukaApp.Screens.PhoneScreen do
   "Just me" — a free personal book — or a business, which they then own
   and can add people to.
 
+  "Continue with Google" (once `config :duka_app, :google_client_id` is
+  set) signs in with a Google account instead. The book on this phone is
+  still kept under a phone number, so someone signing in with Google gives
+  their M-Pesa number too (kept on the phone, for refunds; the server only
+  trusts numbers confirmed by SMS).
+
   Mount params: `%{phone: number}` fills the number in (e.g. from Settings).
   """
 
@@ -24,8 +30,13 @@ defmodule DukaApp.Screens.PhoneScreen do
      |> Mob.Socket.assign(:phone, Map.get(params, :phone, ""))
      |> Mob.Socket.assign(:code, "")
      # :phone (ask the number) → :code (ask the code the server texted) →
-     # :register (a new number: name, and just me or a business)
+     # :register (someone new: name, and just me or a business). With
+     # Google, :phone skips to :register, or to :google_phone for someone
+     # the server knows.
      |> Mob.Socket.assign(:step, :phone)
+     |> Mob.Socket.assign(:via, :sms)
+     # Someone Google signed in, waiting for their M-Pesa number.
+     |> Mob.Socket.assign(:signed_in, nil)
      |> Mob.Socket.assign(:signup_token, nil)
      |> Mob.Socket.assign(:name, "")
      |> Mob.Socket.assign(:business?, false)
@@ -67,6 +78,40 @@ defmodule DukaApp.Screens.PhoneScreen do
       {ActionButton.button("send", if(@busy, do: "Sending code…", else: "Send code"), :send_code,
         enabled: not @busy
       )}
+      {google_button(@busy)}
+    </Column>
+    """
+  end
+
+  # Someone Google signed in whom the server knows: which number is theirs.
+  def render(%{step: :google_phone} = assigns) do
+    ~MOB"""
+    <Column padding_left={22} padding_right={22} background={:background} fill_height={true}>
+      <Spacer size={56} />
+      <Text
+        text="Your M-Pesa number"
+        text_size={26}
+        font_weight="bold"
+        letter_spacing={-1}
+        text_color={:on_background}
+      />
+      <Spacer size={8} />
+      <Text
+        text="Refunds are paid to it. It stays on this phone."
+        text_size={15}
+        text_color={:muted}
+      />
+      <Spacer size={24} />
+      {FormField.field(
+        label: "Phone number",
+        key: :phone,
+        value: @phone,
+        placeholder: "e.g. 0712 345 678",
+        keyboard: :phone,
+        error: @error,
+        submit: :finish_google
+      )}
+      {ActionButton.button("check", "Continue", :finish_google)}
     </Column>
     """
   end
@@ -92,6 +137,16 @@ defmodule DukaApp.Screens.PhoneScreen do
         placeholder: "e.g. Achieng Otieno",
         error: @error
       )}
+      {if @via == :google,
+        do:
+          FormField.field(
+            label: "Your M-Pesa number",
+            key: :phone,
+            value: @phone,
+            placeholder: "e.g. 0712 345 678",
+            keyboard: :phone,
+            hint: "Refunds are paid to it. It stays on this phone."
+          )}
       <Text text="Who's it for?" text_size={13} font_weight="medium" text_color={:on_background} />
       <Spacer size={6} />
       <Row fill_width={true}>
@@ -150,6 +205,21 @@ defmodule DukaApp.Screens.PhoneScreen do
       </Row>
     </Column>
     """
+  end
+
+  defp google_button(busy) do
+    if Application.get_env(:duka_app, :google_client_id) do
+      ~MOB"""
+      <Column fill_width={true} padding_top={12}>
+        {ActionButton.button("user", "Continue with Google", :google,
+          style: :secondary,
+          enabled: not busy
+        )}
+      </Column>
+      """
+    else
+      []
+    end
   end
 
   defp choice(title, subtitle, tag, selected?) do
@@ -222,28 +292,75 @@ defmodule DukaApp.Screens.PhoneScreen do
      |> Native.background(:verified, fn -> Api.verify(phone, String.trim(code)) end)}
   end
 
-  # A new number: ask who they are before signing them up.
-  def handle_info(
-        {:verified, {:ok, %{"needs_registration" => true, "signup_token" => token}}},
-        socket
-      ) do
+  # Someone new: ask who they are before signing them up.
+  def handle_info({result, {:ok, %{"needs_registration" => true} = body}}, socket)
+      when result in [:verified, :google_verified] do
     {:noreply,
-     Mob.Socket.assign(socket, step: :register, signup_token: token, busy: false, error: nil)}
+     Mob.Socket.assign(socket,
+       step: :register,
+       signup_token: body["signup_token"],
+       name: body["name"] || socket.assigns.name,
+       busy: false,
+       error: nil
+     )}
   end
 
-  def handle_info({result, {:ok, body}}, socket) when result in [:verified, :registered] do
-    case Accounts.connect(socket.assigns.phone, body) do
-      {:ok, _profile} ->
-        {:noreply, Mob.Socket.reset_to(socket, DukaApp.Screens.ReceiptsScreen)}
+  # Google signed in someone the server knows: the number the server has
+  # for them (confirmed by SMS), or ask which is theirs.
+  def handle_info({:google_verified, {:ok, %{"user" => user} = body}}, socket) do
+    case user["phone"] do
+      phone when is_binary(phone) ->
+        socket |> Mob.Socket.assign(:phone, phone) |> finish(body)
 
-      {:error, _changeset} ->
+      nil ->
         {:noreply,
-         Mob.Socket.assign(socket, busy: false, error: "Couldn't save the sign-in. Try again.")}
+         Mob.Socket.assign(socket, step: :google_phone, signed_in: body, busy: false, error: nil)}
     end
   end
 
-  def handle_info({result, {:error, error}}, socket) when result in [:verified, :registered] do
+  def handle_info({result, {:ok, body}}, socket) when result in [:verified, :registered],
+    do: finish(socket, body)
+
+  def handle_info({result, {:error, error}}, socket)
+      when result in [:verified, :registered, :google_verified] do
     {:noreply, Mob.Socket.assign(socket, busy: false, error: Api.error_message(error))}
+  end
+
+  def handle_info({event, :google}, %{assigns: %{busy: false}} = socket)
+      when event in [:tap, :submit] do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(busy: true, error: nil, via: :google, phone: "")
+     |> Native.google_sign_in(Application.fetch_env!(:duka_app, :google_client_id))}
+  end
+
+  def handle_info({:google, :result, json}, socket) do
+    %{"id_token" => id_token} = MobGoogle.decode(json)
+    {:noreply, Native.background(socket, :google_verified, fn -> Api.google(id_token) end)}
+  end
+
+  def handle_info({:google, :error, json}, socket) do
+    socket = Mob.Socket.assign(socket, busy: false, via: :sms)
+
+    case MobGoogle.decode(json) do
+      %{"message" => "cancelled"} ->
+        {:noreply, socket}
+
+      %{"message" => "no_accounts"} ->
+        {:noreply, Mob.Socket.assign(socket, :error, "Add a Google account to this phone first.")}
+
+      _other ->
+        {:noreply,
+         Mob.Socket.assign(socket, :error, "Google sign-in didn't work. Try the SMS code.")}
+    end
+  end
+
+  def handle_info({event, :finish_google}, %{assigns: %{signed_in: body}} = socket)
+      when event in [:tap, :submit] and is_map(body) do
+    case Profile.normalize(socket.assigns.phone) do
+      {:ok, phone} -> socket |> Mob.Socket.assign(:phone, phone) |> finish(body)
+      :error -> {:noreply, Mob.Socket.assign(socket, :error, "Enter a Kenyan mobile number.")}
+    end
   end
 
   def handle_info({:tap, {:for, choice}}, socket) do
@@ -262,6 +379,9 @@ defmodule DukaApp.Screens.PhoneScreen do
       business? and String.trim(team_name) == "" ->
         {:noreply, Mob.Socket.assign(socket, :error, "Give your business a name")}
 
+      socket.assigns.via == :google and Profile.normalize(socket.assigns.phone) == :error ->
+        {:noreply, Mob.Socket.assign(socket, :error, "Enter your M-Pesa number")}
+
       true ->
         team_name = if business?, do: String.trim(team_name), else: ""
 
@@ -279,4 +399,18 @@ defmodule DukaApp.Screens.PhoneScreen do
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  # Connects the book on this phone (kept under the phone number) and opens it.
+  defp finish(socket, body) do
+    {:ok, phone} = Profile.normalize(socket.assigns.phone)
+
+    case Accounts.connect(phone, body) do
+      {:ok, _profile} ->
+        {:noreply, Mob.Socket.reset_to(socket, DukaApp.Screens.ReceiptsScreen)}
+
+      {:error, _changeset} ->
+        {:noreply,
+         Mob.Socket.assign(socket, busy: false, error: "Couldn't save the sign-in. Try again.")}
+    end
+  end
 end

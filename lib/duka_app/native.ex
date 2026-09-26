@@ -1,7 +1,8 @@
 defmodule DukaApp.Native do
   @moduledoc """
-  The native calls screens make: camera, QR scanner, receipt OCR, toasts and
-  haptics — plus the one network call, the KRA receipt lookup.
+  The native calls screens make: camera, QR scanner, receipt OCR, Sign in
+  with Google, toasts and haptics — plus the one network call, the KRA
+  receipt lookup.
 
   They go straight to the phone's native layer, which does not exist under
   `mix test`. With `config :duka_app, :native, false` each call instead sends
@@ -31,6 +32,15 @@ defmodule DukaApp.Native do
   @spec take_photo(Mob.Socket.t()) :: Mob.Socket.t()
   def take_photo(socket),
     do: call(socket, :take_photo, [], &MobCamera.capture_photo(&1, quality: :high))
+
+  @doc """
+  Shows the Google account chooser. Replies `{:google, :result, json}` or
+  `{:google, :error, json}` — see `MobGoogle`.
+  """
+  @spec google_sign_in(Mob.Socket.t(), String.t()) :: Mob.Socket.t()
+  def google_sign_in(socket, server_client_id) do
+    call(socket, :google_sign_in, [], &MobGoogle.sign_in(&1, server_client_id: server_client_id))
+  end
 
   @doc "Replies `{:ocr, :result, json}` or `{:ocr, :error, json}` — see `MobOcr`."
   @spec process_photo(Mob.Socket.t(), String.t(), String.t()) :: Mob.Socket.t()
