@@ -36,6 +36,7 @@ defmodule DukaApp.Screens.RequestFlowTest do
       |> render_info({:select, :receipts, 0})
 
     assert %Transaction{type: "expense"} = assigns(view).selected
+    assert sheet_text(assigns(view).selected, false) =~ "Request refund"
     view = render_info(view, {:tap, :request_refund})
 
     assert nav_action(view) ==
@@ -199,6 +200,47 @@ defmodule DukaApp.Screens.RequestFlowTest do
     assert assigns(view).items == []
     assert Transactions.list_transactions(profile, "", :claims) == []
   end
+
+  test "a personal book has nobody to ask: no refunds or payment requests" do
+    {:ok, _} =
+      Accounts.connect("0712345678", %{
+        "token" => "tok-1",
+        "user" => %{
+          "id" => "u-1",
+          "team" => "p_abc",
+          "team_kind" => "personal",
+          "permissions" => %{"approve" => true}
+        }
+      })
+
+    view = ReceiptsScreen |> mount_screen() |> render_info({:tap, :add_menu})
+    assert nav_action(view) == {:push, ReceiptFormScreen, %{}}
+
+    refute text(view) =~ "Refunds & payments"
+
+    view = view |> render_info({:select, :receipts, 0})
+    assert_renderable(view, extra: @extra)
+    sheet = sheet_text(assigns(view).selected, true)
+    refute sheet =~ "Request refund"
+    refute sheet =~ "Waiting for approval"
+  end
+
+  # Everything the transaction sheet says, as one string.
+  defp sheet_text(transaction, personal) do
+    %{transaction: transaction, personal: personal}
+    |> DukaApp.Components.TransactionSheet.expand([], %{})
+    |> texts()
+    |> Enum.join(" ")
+  end
+
+  defp texts(list) when is_list(list), do: Enum.flat_map(list, &texts/1)
+
+  defp texts(%{} = node) do
+    own = node |> Map.get(:props, %{}) |> Map.get(:text) |> List.wrap()
+    own ++ texts(Map.get(node, :children, []))
+  end
+
+  defp texts(_other), do: []
 
   describe "attachments" do
     @describetag :tmp_dir

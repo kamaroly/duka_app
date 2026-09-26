@@ -21,6 +21,8 @@ defmodule DukaApp.Accounts.Profile do
     field :api_token, :string, redact: true
     field :remote_user_id, :string
     field :team, :string
+    field :team_kind, :string
+    field :team_name, :string
     # What the server says this person may do in their team (see /api/me).
     field :can_approve, :boolean, default: false
     field :can_mark_paid, :boolean, default: false
@@ -61,6 +63,8 @@ defmodule DukaApp.Accounts.Profile do
       :api_token,
       :remote_user_id,
       :team,
+      :team_kind,
+      :team_name,
       :name,
       :can_approve,
       :can_mark_paid,
@@ -69,14 +73,24 @@ defmodule DukaApp.Accounts.Profile do
     ])
   end
 
+  @doc "True for a connected book that's just this person's: no approvals, refunds or payment requests."
+  @spec personal?(t() | nil) :: boolean()
+  def personal?(%__MODULE__{team_kind: "personal"} = profile), do: connected?(profile)
+  def personal?(_profile), do: false
+
   @spec connected?(t() | nil) :: boolean()
   def connected?(%__MODULE__{api_token: token}) when is_binary(token), do: true
   def connected?(_profile), do: false
 
-  @doc "A manager is anyone the server lets approve, or pay out, transactions."
+  @doc """
+  A manager is anyone the server lets approve, or pay out, transactions in
+  a business team. A personal book has nobody else to approve.
+  """
   @spec manager?(t() | nil) :: boolean()
   def manager?(%__MODULE__{} = profile),
-    do: connected?(profile) and (profile.can_approve or profile.can_mark_paid)
+    do:
+      connected?(profile) and not personal?(profile) and
+        (profile.can_approve or profile.can_mark_paid)
 
   def manager?(_profile), do: false
 

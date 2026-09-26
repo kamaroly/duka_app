@@ -5,6 +5,7 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
   use Mob.ScreenCase, async: false
 
   alias DukaApp.{Accounts, Appearance, Transactions}
+  alias DukaApp.Accounts.Profile
   alias DukaApp.Screens.{PhoneScreen, ReceiptFormScreen, ReceiptsScreen, SettingsScreen}
   alias DukaApp.Theme.{Dark, Light}
 
@@ -79,10 +80,10 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
              } = Accounts.current_profile()
     end
 
-    test "a number that isn't in a team, and a wrong code, are explained" do
+    test "a refused code, and a wrong code, are explained" do
       FakeServer.stub(fn
         {:post, "/api/auth/code", _} ->
-          {404, %{"error" => "This number isn't in a team yet. Ask your manager to add it."}}
+          {429, %{"error" => "Too many codes. Try again in an hour."}}
       end)
 
       view =
@@ -92,7 +93,7 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
         |> render_info({:tap, :send_code})
         |> reply(:code_sent)
 
-      assert assigns(view).error =~ "Ask your manager"
+      assert assigns(view).error =~ "Too many codes"
       assert assigns(view).step == :phone
 
       FakeServer.stub(fn
@@ -123,19 +124,105 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
       refute_received {:http, _, _, _}
     end
 
-    test "offline, the receipt book can still be used without a team" do
+    test "a new number signs up: just me is a free personal book" do
+      FakeServer.stub(fn
+        {:post, "/api/auth/code", _} ->
+          {200, %{"sent" => true}}
+
+        {:post, "/api/auth/verify", _} ->
+          {200, %{"needs_registration" => true, "signup_token" => "signup-1"}}
+
+        {:post, "/api/auth/register", _} ->
+          {201,
+           %{
+             "token" => "tok-2",
+             "user" => %{
+               "id" => "u-2",
+               "name" => "Achieng",
+               "team" => "p_abc",
+               "team_kind" => "personal",
+               "team_name" => "Personal",
+               "permissions" => %{"approve" => true, "mark_paid" => true}
+             }
+           }}
+      end)
+
       view =
         PhoneScreen
         |> mount_screen()
         |> render_info({:change, :phone, "0712345678"})
         |> render_info({:tap, :send_code})
         |> reply(:code_sent)
+        |> render_info({:change, :code, "482913"})
+        |> render_info({:tap, :verify})
+        |> reply(:verified)
 
-      assert assigns(view).error =~ "Can't reach the server"
+      assert assigns(view).step == :register
+      assert_renderable(view, extra: @extra)
 
-      view = render_info(view, {:tap, :offline})
+      # A name is needed.
+      view = render_info(view, {:tap, :register})
+      assert assigns(view).error =~ "your name"
+      refute_received {:http, :post, "/api/auth/register", _}
+
+      view =
+        view
+        |> render_info({:change, :name, "Achieng"})
+        |> render_info({:tap, :register})
+        |> reply(:registered)
+
+      assert_received {:http, :post, "/api/auth/register",
+                       %{
+                         body:
+                           {:json, %{signup_token: "signup-1", name: "Achieng", team_name: ""}}
+                       }}
+
       assert navigated_to(view) == ReceiptsScreen
-      assert %{phone: "+254712345678", api_token: nil} = Accounts.current_profile()
+
+      profile = Accounts.current_profile()
+      assert %{api_token: "tok-2", team_kind: "personal"} = profile
+
+      # Nobody else to approve in a personal book.
+      assert Profile.personal?(profile)
+      refute Profile.manager?(profile)
+    end
+
+    test "a new number signs up a business, with its name" do
+      FakeServer.stub(fn
+        {:post, "/api/auth/code", _} ->
+          {200, %{"sent" => true}}
+
+        {:post, "/api/auth/verify", _} ->
+          {200, %{"needs_registration" => true, "signup_token" => "signup-1"}}
+
+        {:post, "/api/auth/register", _} ->
+          {201, %{"token" => "tok-3", "user" => Map.put(@user, "team_kind", "business")}}
+      end)
+
+      view =
+        PhoneScreen
+        |> mount_screen()
+        |> render_info({:change, :phone, "0712345678"})
+        |> render_info({:tap, :send_code})
+        |> reply(:code_sent)
+        |> render_info({:change, :code, "482913"})
+        |> render_info({:tap, :verify})
+        |> reply(:verified)
+        |> render_info({:change, :name, "Achieng"})
+        |> render_info({:tap, {:for, :business}})
+
+      view = render_info(view, {:tap, :register})
+      assert assigns(view).error =~ "business a name"
+
+      view
+      |> render_info({:change, :team_name, "Achieng Traders"})
+      |> render_info({:tap, :register})
+      |> reply(:registered)
+
+      assert_received {:http, :post, "/api/auth/register",
+                       %{body: {:json, %{team_name: "Achieng Traders"}}}}
+
+      assert %{team_kind: "business"} = Accounts.current_profile()
     end
   end
 

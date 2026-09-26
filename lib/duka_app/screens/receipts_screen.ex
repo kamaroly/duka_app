@@ -158,7 +158,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
         {if not @searching, do: spend_card(@summary, @month)}
         <Spacer size={14} />
       </Column>
-      {chips(@group, @summary.count)}
+      {chips(@group, @summary.count, Profile.personal?(@profile))}
       <Spacer size={14} />
       <Row fill_width={true} padding_left={22} padding_right={22} padding_bottom={8}>
         <Text
@@ -194,7 +194,11 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       />
       <Spacer :if={@items == []} weight={1} />
       {if not @searching, do: dock()}
-      <TransactionSheet :if={@selected} transaction={@selected} />
+      <TransactionSheet
+        :if={@selected}
+        transaction={@selected}
+        personal={Profile.personal?(@profile)}
+      />
     </Column>
     """
   end
@@ -292,13 +296,15 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     """
   end
 
-  # All / Food / Fuel / Other / Refunds & payments filter pills. The strip
-  # scrolls sideways in case a large font size pushes the last pill off screen.
-  defp chips(active, count) do
+  # All / Food / Fuel / Other / Refunds & payments filter pills (a personal
+  # book has no refunds or payments to ask for). The strip scrolls sideways
+  # in case a large font size pushes the last pill off screen.
+  defp chips(active, count, personal?) do
     groups = Enum.map(Transactions.groups(), &{&1, Transactions.group_label(&1)})
+    claims = if personal?, do: [], else: [{:claims, "Refunds & payments"}]
 
     pills =
-      ([{:all, "All · #{count}"} | groups] ++ [{:claims, "Refunds & payments"}])
+      ([{:all, "All · #{count}"} | groups] ++ claims)
       |> Enum.map(fn {group, label} -> chip(group, label, group == active) end)
       |> Enum.intersperse(~MOB(<Spacer size={8} />))
 
@@ -665,6 +671,12 @@ defmodule DukaApp.Screens.ReceiptsScreen do
 
   # ── Adding, and claims ────────────────────────────────────────────────────
 
+  # A personal book has nobody to ask for a payment: + adds an expense.
+  def handle_info({:tap, :add_menu}, %{assigns: %{profile: profile}} = socket)
+      when profile.team_kind == "personal" do
+    handle_info({:tap, :add_manual}, socket)
+  end
+
   def handle_info({:tap, :add_menu}, socket) do
     {:noreply,
      Mob.Alert.action_sheet(socket,
@@ -944,8 +956,13 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   end
 
   # `sync` marks what has reached the server, in a connected book.
-  defp list_item(transaction, sync),
-    do: TransactionItem.expand(%{transaction: transaction, sync: sync}, [], %{})
+  defp list_item(transaction, sync, personal),
+    do:
+      TransactionItem.expand(
+        %{transaction: transaction, sync: sync, personal: personal},
+        [],
+        %{}
+      )
 
   defp start_sync(%{assigns: %{profile: profile, syncing: false}} = socket) do
     if Profile.connected?(profile),
@@ -1042,11 +1059,12 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   defp load_receipts(socket) do
     %{profile: profile, query: query, group: group, month: month} = socket.assigns
     sync = Profile.connected?(profile)
+    personal = Profile.personal?(profile)
 
     socket
     |> Mob.Socket.assign(:items, Transactions.list_transactions(profile, query, group))
     |> Mob.Socket.assign(:summary, Transactions.summary(profile, month))
-    |> Mob.List.put_renderer(:receipts, &list_item(&1, sync))
+    |> Mob.List.put_renderer(:receipts, &list_item(&1, sync, personal))
   end
 
   defp greeting(%{name: name}) when is_binary(name) and name != "", do: "Hi, #{name}"

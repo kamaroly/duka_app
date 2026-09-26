@@ -1,13 +1,12 @@
 defmodule DukaApp.Screens.PhoneScreen do
   @moduledoc """
-  Sign-in: the phone number that owns this receipt book.
+  Sign-in and sign-up: the phone number that owns this expense book.
 
-  With a team: the server texts a 6-digit code to the number (it must have
-  been added to the team by a manager); entering it connects the receipt
-  book, and its receipts and requests go to the team for approval.
-
-  Without one: "Use without a team" opens a receipt book that stays on the
-  phone. It can be connected later from Settings.
+  The server texts a 6-digit code to the number; entering it connects the
+  book. A number the server already knows (added by a manager, or signed up
+  before) goes straight in. A new one is asked for a name and whether it's
+  "Just me" — a free personal book — or a business, which they then own
+  and can add people to.
 
   Mount params: `%{phone: number}` fills the number in (e.g. from Settings).
   """
@@ -24,8 +23,13 @@ defmodule DukaApp.Screens.PhoneScreen do
      socket
      |> Mob.Socket.assign(:phone, Map.get(params, :phone, ""))
      |> Mob.Socket.assign(:code, "")
-     # :phone (ask the number) → :code (ask the code the server texted)
+     # :phone (ask the number) → :code (ask the code the server texted) →
+     # :register (a new number: name, and just me or a business)
      |> Mob.Socket.assign(:step, :phone)
+     |> Mob.Socket.assign(:signup_token, nil)
+     |> Mob.Socket.assign(:name, "")
+     |> Mob.Socket.assign(:business?, false)
+     |> Mob.Socket.assign(:team_name, "")
      |> Mob.Socket.assign(:busy, false)
      |> Mob.Socket.assign(:error, nil)}
   end
@@ -44,7 +48,7 @@ defmodule DukaApp.Screens.PhoneScreen do
       />
       <Spacer size={8} />
       <Text
-        text="Scan KRA receipts, keep them on your phone and send them to your team for approval. We'll text you a code to sign in."
+        text="Scan KRA receipts and keep track of what you spend, alone or with your team. We'll text you a code to sign in or sign up."
         text_size={15}
         text_color={:muted}
       />
@@ -55,7 +59,7 @@ defmodule DukaApp.Screens.PhoneScreen do
         value: @phone,
         placeholder: "e.g. 0712 345 678",
         keyboard: :phone,
-        hint: "The number your manager added to the team.",
+        hint: "Your own number, or the one your manager added to the team.",
         error: @error,
         submit: :send_code
       )}
@@ -63,14 +67,50 @@ defmodule DukaApp.Screens.PhoneScreen do
       {ActionButton.button("send", if(@busy, do: "Sending code…", else: "Send code"), :send_code,
         enabled: not @busy
       )}
-      <Spacer size={12} />
-      {ActionButton.button("forward", "Use without a team", :offline, style: :secondary)}
-      <Spacer size={6} />
+    </Column>
+    """
+  end
+
+  def render(%{step: :register} = assigns) do
+    ~MOB"""
+    <Column padding_left={22} padding_right={22} background={:background} fill_height={true}>
+      <Spacer size={56} />
       <Text
-        text="Receipts stay on this phone. You can connect to a team later in Settings."
-        text_size={12}
-        text_color={:muted}
+        text="Welcome to Risiti"
+        text_size={26}
+        font_weight="bold"
+        letter_spacing={-1}
+        text_color={:on_background}
       />
+      <Spacer size={8} />
+      <Text text="A couple of things and you're in." text_size={15} text_color={:muted} />
+      <Spacer size={24} />
+      {FormField.field(
+        label: "Your name",
+        key: :name,
+        value: @name,
+        placeholder: "e.g. Achieng Otieno",
+        error: @error
+      )}
+      <Text text="Who's it for?" text_size={13} font_weight="medium" text_color={:on_background} />
+      <Spacer size={6} />
+      <Row fill_width={true}>
+        {choice("Just me", "Free", :just_me, not @business?)}
+        <Spacer size={8} />
+        {choice("My business", "Free trial", :business, @business?)}
+      </Row>
+      <Spacer size={16} />
+      {if @business?,
+        do:
+          FormField.field(
+            label: "Business name",
+            key: :team_name,
+            value: @team_name,
+            placeholder: "e.g. Achieng Traders"
+          )}
+      {ActionButton.button("check", if(@busy, do: "Setting up…", else: "Start"), :register,
+        enabled: not @busy
+      )}
     </Column>
     """
   end
@@ -112,10 +152,37 @@ defmodule DukaApp.Screens.PhoneScreen do
     """
   end
 
+  defp choice(title, subtitle, tag, selected?) do
+    {background, text_color, border} =
+      if selected?,
+        do: {:primary, :on_primary, :primary},
+        else: {:surface, :on_surface, :border}
+
+    ~MOB"""
+    <Box
+      weight={1}
+      background={background}
+      border_color={border}
+      border_width={1}
+      corner_radius={16}
+      padding={14}
+      on_tap={{self(), {:for, tag}}}
+      accessibility_label={title}
+      accessibility_role={:button}
+    >
+      <Column>
+        <Text text={title} text_size={15} font_weight="semibold" text_color={text_color} />
+        <Text text={subtitle} text_size={12} text_color={text_color} />
+      </Column>
+    </Box>
+    """
+  end
+
   # ── Events ──────────────────────────────────────────────────────────────────
 
   @impl Mob.Screen
-  def handle_info({:change, field, value}, socket) when field in [:phone, :code] do
+  def handle_info({:change, field, value}, socket)
+      when field in [:phone, :code, :name, :team_name] do
     {:noreply, Mob.Socket.assign(socket, [{field, value}, {:error, nil}])}
   end
 
@@ -155,7 +222,16 @@ defmodule DukaApp.Screens.PhoneScreen do
      |> Native.background(:verified, fn -> Api.verify(phone, String.trim(code)) end)}
   end
 
-  def handle_info({:verified, {:ok, body}}, socket) do
+  # A new number: ask who they are before signing them up.
+  def handle_info(
+        {:verified, {:ok, %{"needs_registration" => true, "signup_token" => token}}},
+        socket
+      ) do
+    {:noreply,
+     Mob.Socket.assign(socket, step: :register, signup_token: token, busy: false, error: nil)}
+  end
+
+  def handle_info({result, {:ok, body}}, socket) when result in [:verified, :registered] do
     case Accounts.connect(socket.assigns.phone, body) do
       {:ok, _profile} ->
         {:noreply, Mob.Socket.reset_to(socket, DukaApp.Screens.ReceiptsScreen)}
@@ -166,23 +242,40 @@ defmodule DukaApp.Screens.PhoneScreen do
     end
   end
 
-  def handle_info({:verified, {:error, error}}, socket) do
+  def handle_info({result, {:error, error}}, socket) when result in [:verified, :registered] do
     {:noreply, Mob.Socket.assign(socket, busy: false, error: Api.error_message(error))}
+  end
+
+  def handle_info({:tap, {:for, choice}}, socket) do
+    {:noreply, Mob.Socket.assign(socket, :business?, choice == :business)}
+  end
+
+  def handle_info({event, :register}, %{assigns: %{busy: false}} = socket)
+      when event in [:tap, :submit] do
+    %{signup_token: token, name: name, business?: business?, team_name: team_name} =
+      socket.assigns
+
+    cond do
+      String.trim(name) == "" ->
+        {:noreply, Mob.Socket.assign(socket, :error, "Tell us your name")}
+
+      business? and String.trim(team_name) == "" ->
+        {:noreply, Mob.Socket.assign(socket, :error, "Give your business a name")}
+
+      true ->
+        team_name = if business?, do: String.trim(team_name), else: ""
+
+        {:noreply,
+         socket
+         |> Mob.Socket.assign(busy: true, error: nil)
+         |> Native.background(:registered, fn ->
+           Api.register(token, String.trim(name), team_name)
+         end)}
+    end
   end
 
   def handle_info({:tap, :change_number}, socket) do
     {:noreply, Mob.Socket.assign(socket, step: :phone, code: "", error: nil)}
-  end
-
-  def handle_info({:tap, :offline}, socket) do
-    case Accounts.sign_in(socket.assigns.phone) do
-      {:ok, _profile} ->
-        {:noreply, Mob.Socket.reset_to(socket, DukaApp.Screens.ReceiptsScreen)}
-
-      {:error, _changeset} ->
-        {:noreply,
-         Mob.Socket.assign(socket, :error, "Enter a Kenyan mobile number, e.g. 0712 345 678.")}
-    end
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}

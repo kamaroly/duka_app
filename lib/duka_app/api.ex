@@ -60,6 +60,19 @@ defmodule DukaApp.Api do
     end
   end
 
+  @doc """
+  Signs up a new number `verify/2` confirmed: the person's `name`, and a
+  `team_name` for a business (blank for a free personal book).
+  """
+  def register(signup_token, name, team_name) do
+    post(
+      "/api/auth/register",
+      nil,
+      {:json, %{signup_token: signup_token, name: name, team_name: team_name}}
+    )
+    |> ok_body()
+  end
+
   def me(profile), do: call(:get, "/api/me", profile) |> ok_body()
 
   # ── Push notifications ────────────────────────────────────────────────────

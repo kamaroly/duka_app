@@ -7,6 +7,9 @@ defmodule DukaApp.Components.TransactionSheet do
   (check with KRA in the app), `{:tap, :open_on_kra}` (open KRA's page in the
   browser), `{:tap, {:open_attachment, id}}` and `{:tap, :close_transaction}`
   (or `{:dismiss, :close_transaction}` on swipe-down).
+
+  With `personal: true` (a personal book) there's nobody to approve or pay
+  back, so the sheet doesn't offer a refund or say where approval stands.
   """
 
   import Mob.Sigil
@@ -18,6 +21,7 @@ defmodule DukaApp.Components.TransactionSheet do
   @spec expand(map(), [map()], map()) :: map()
   def expand(props, _children, _ctx) do
     transaction = Map.fetch!(props, :transaction)
+    personal = Map.get(props, :personal, false)
 
     ~MOB"""
     <Sheet
@@ -46,12 +50,12 @@ defmodule DukaApp.Components.TransactionSheet do
         </Row>
         <Spacer size={14} />
         {TransactionItem.details(transaction)}
-        {status_line(transaction)}
+        {if not personal, do: status_line(transaction)}
         {detail_row("Source", source_label(transaction.source))}
         <Spacer size={16} />
         {edit_buttons(transaction)}
         {kra_button(transaction)}
-        {refund_button(transaction)}
+        {if not personal, do: refund_button(transaction)}
       </Column>
     </Sheet>
     """

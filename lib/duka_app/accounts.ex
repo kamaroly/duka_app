@@ -80,6 +80,8 @@ defmodule DukaApp.Accounts do
       %{
         remote_user_id: user["id"],
         team: user["team"],
+        team_kind: user["team_kind"],
+        team_name: user["team_name"],
         can_approve: permissions["approve"] == true,
         can_mark_paid: permissions["mark_paid"] == true,
         can_list_all: permissions["list_all"] == true,
@@ -101,6 +103,8 @@ defmodule DukaApp.Accounts do
     |> Ecto.Changeset.change(
       api_token: nil,
       team: nil,
+      team_kind: nil,
+      team_name: nil,
       can_approve: false,
       can_mark_paid: false,
       can_list_all: false,

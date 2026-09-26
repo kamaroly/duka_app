@@ -9,8 +9,9 @@ defmodule DukaApp.Components.TransactionItem do
   date. Refunds and payment requests say what they are and always show
   their status; an expense shows it once it's decided.
 
-  Props: `transaction`, and `sync: true` in a connected book to mark
-  whether the team's server has it (see `SyncBadge`).
+  Props: `transaction`, `sync: true` in a connected book to mark whether
+  the team's server has it (see `SyncBadge`), and `personal: true` in a
+  personal book, where there's no approval to show.
   """
 
   import Mob.Sigil
@@ -24,6 +25,7 @@ defmodule DukaApp.Components.TransactionItem do
   def expand(props, _children, _ctx) do
     transaction = Map.fetch!(props, :transaction)
     sync = Map.get(props, :sync, false)
+    personal = Map.get(props, :personal, false)
 
     # The amount column sets no text_align: Android stretches an aligned Text
     # to full width, which squeezes the vendor column to nothing.
@@ -82,7 +84,7 @@ defmodule DukaApp.Components.TransactionItem do
                 fill_width={false}
               />
             </Row>
-            {status_tag(transaction)}
+            {if not personal, do: status_tag(transaction)}
           </Column>
         </Row>
       </Box>
