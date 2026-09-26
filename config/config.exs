@@ -18,8 +18,9 @@ config :mob, :plugins, [:mob_camera, :mob_scanner, :mob_biometric, :mob_notify, 
 config :mob, :acknowledge_unsafe_plugins, [:mob_ocr, :mob_google]
 
 # The Risiti server the app signs in to and syncs with (see DukaApp.Api).
-# Users can change it in Settings. For a server on your laptop and a phone on
-# USB: `adb reverse tcp:4000 tcp:4000`, and 127.0.0.1 reaches the laptop.
+# Users can't change it. To try the app against a server on your laptop with
+# the phone on USB, temporarily set "http://127.0.0.1:4000" here and run
+# `adb reverse tcp:4000 tcp:4000` (don't commit it).
 config :duka_app, :api_url, "https://expenses.zippiker.com"
 
 # Push notifications from the server (see DukaApp.Push). Needs Firebase set
