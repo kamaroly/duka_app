@@ -1,29 +1,27 @@
 defmodule DukaApp.Sync do
   @moduledoc """
-  Keeps a connected receipt book and the Risiti server in step.
+  Keeps a connected expense book and the Risiti server in step.
 
   One run:
 
-    1. **deletes** on the server what was deleted or withdrawn on the phone
-       (`DukaApp.Sync.Deletion`) — requests first, since the server keeps a
-       receipt that still has one. The server keeps anything already
-       decided, and the pull then brings it back;
-    2. **pushes** receipts with changes the server hasn't seen
-       (`needs_push`), with their photo until the server has it;
-    3. **pushes** requests the server hasn't got yet, with attachments
-       (after receipts, so a refund's receipt is already there);
-    4. **pulls** the manager's decisions back: approval status and note for
-       receipts, status and note for requests — and adds what the server
-       has that the phone doesn't (after a reinstall, or from another
-       phone). Their photos and attachments download when first opened
-       (`fetch_photo/2`, `fetch_attachment/2`);
-    5. refreshes what the person may approve (`/api/me`).
+    1. **deletes** on the server what was deleted on the phone
+       (`DukaApp.Sync.Deletion`). The server keeps anything already decided,
+       and the pull then brings it back;
+    2. **pushes** transactions with changes the server hasn't seen
+       (`needs_push`), with their photo until the server has it and the
+       attachments it hasn't got yet;
+    3. **pulls** the decisions back — status, note, when paid — and adds
+       what the server has that the phone doesn't (after a reinstall, or
+       from another phone). Their photos and attachments download when
+       first opened (`fetch_photo/2`, `fetch_attachment/2`);
+    4. refreshes what the person may do (`/api/me`).
 
   Everything is keyed by the phone's `client_id`, so a run cut short by a
-  dropped connection is simply repeated. A receipt is marked sent only if
-  it wasn't edited while its upload was in flight, so an edit is never lost.
+  dropped connection is simply repeated. A transaction is marked sent only
+  if it wasn't edited while its upload was in flight, so an edit is never
+  lost.
 
-  The phone stays the source of truth for receipt figures; the server for
+  The phone stays the source of truth for the figures; the server for
   decisions.
   """
 
@@ -31,9 +29,9 @@ defmodule DukaApp.Sync do
 
   alias DukaApp.{Accounts, Api, Repo}
   alias DukaApp.Accounts.Profile
-  alias DukaApp.Receipts.{Photos, Receipt}
-  alias DukaApp.Requests.{Attachment, Attachments, Request}
+  alias DukaApp.Receipts.Photos
   alias DukaApp.Sync.Deletion
+  alias DukaApp.Transactions.{Attachment, Attachments, Transaction}
 
   @type summary :: %{
           pushed: non_neg_integer(),
@@ -79,38 +77,30 @@ defmodule DukaApp.Sync do
   @spec run(Profile.t()) :: {:ok, summary()} | {:error, :offline | :unauthorized}
   def run(%Profile{} = profile) do
     with :ok <- push_deletions(profile),
-         {:ok, receipts} <- push_receipts(profile),
-         {:ok, requests} <- push_requests(profile),
+         {:ok, pushed} <- push_transactions(profile),
          {:ok, pulled} <- pull(profile) do
       refresh_permissions(profile)
-
-      {:ok,
-       %{
-         pushed: receipts.pushed + requests.pushed,
-         failed: receipts.failed + requests.failed,
-         pulled: pulled
-       }}
+      {:ok, Map.put(pushed, :pulled, pulled)}
     end
   end
 
   # ── Deletions ──────────────────────────────────────────────────────────────
 
-  @doc "Notes that a receipt or request (`kind`) was deleted, for the next sync to tell the server."
-  @spec remember_deletion(integer(), String.t(), String.t()) :: :ok
-  def remember_deletion(profile_id, kind, client_id) do
-    Repo.insert!(%Deletion{profile_id: profile_id, kind: kind, client_id: client_id},
+  @doc "Notes that a transaction was deleted, for the next sync to tell the server."
+  @spec remember_deletion(integer(), String.t()) :: :ok
+  def remember_deletion(profile_id, client_id) do
+    Repo.insert!(%Deletion{profile_id: profile_id, kind: "transaction", client_id: client_id},
       on_conflict: :nothing
     )
 
     :ok
   end
 
-  # "request" sorts after "receipt", so descending sends requests first.
   defp push_deletions(profile) do
-    from(d in Deletion, where: d.profile_id == ^profile.id, order_by: [desc: d.kind, asc: d.id])
+    from(d in Deletion, where: d.profile_id == ^profile.id, order_by: [asc: d.id])
     |> Repo.all()
     |> Enum.reduce_while(:ok, fn deletion, :ok ->
-      case delete_remote(profile, deletion) do
+      case Api.delete_transaction(profile, deletion.client_id) do
         {:error, reason} when reason in [:offline, :unauthorized] ->
           {:halt, {:error, reason}}
 
@@ -134,79 +124,25 @@ defmodule DukaApp.Sync do
     {:cont, :ok}
   end
 
-  defp delete_remote(profile, %Deletion{kind: "receipt", client_id: id}),
-    do: Api.delete_receipt(profile, id)
-
-  defp delete_remote(profile, %Deletion{kind: "request", client_id: id}),
-    do: Api.delete_request(profile, id)
-
-  defp deleted_ids(profile, kind) do
-    from(d in Deletion,
-      where: d.profile_id == ^profile.id and d.kind == ^kind,
-      select: d.client_id
-    )
+  defp deleted_ids(profile) do
+    from(d in Deletion, where: d.profile_id == ^profile.id, select: d.client_id)
     |> Repo.all()
     |> MapSet.new()
   end
 
   # ── Push ───────────────────────────────────────────────────────────────────
 
-  defp push_receipts(profile) do
-    from(r in Receipt,
-      where: r.profile_id == ^profile.id and r.needs_push == true,
-      order_by: r.id
-    )
-    |> Repo.all()
-    |> push_each(fn receipt ->
-      with {:ok, %{"receipt" => json}} <- Api.put_receipt(profile, receipt) do
-        mark_receipt_pushed(receipt, json)
-      end
-    end)
-  end
-
-  # Only if nobody edited the receipt while it was being sent.
-  defp mark_receipt_pushed(receipt, json) do
-    from(r in Receipt, where: r.id == ^receipt.id and r.updated_at == ^receipt.updated_at)
-    |> Repo.update_all(
-      set:
-        [
-          needs_push: false,
-          photo_pushed: receipt.photo_path != nil,
-          remote_id: json["id"],
-          synced_at: now()
-        ] ++
-          decision(json)
-    )
-
-    :ok
-  end
-
-  defp push_requests(profile) do
-    from(q in Request,
-      where: q.profile_id == ^profile.id and is_nil(q.remote_id),
-      order_by: q.id,
-      preload: [:receipt, :attachments]
-    )
-    |> Repo.all()
-    |> push_each(fn request ->
-      receipt_client_id = request.receipt && request.receipt.client_id
-
-      with {:ok, %{"request" => json}} <- Api.create_request(profile, request, receipt_client_id) do
-        request
-        |> Ecto.Changeset.change(remote_id: json["id"], submitted_at: now(), synced_at: now())
-        |> Ecto.Changeset.change(request_decision(json))
-        |> Repo.update!()
-
-        :ok
-      end
-    end)
-  end
-
   # Stops at the first sign the server can't be used (offline, signed out);
-  # a record the server refuses is counted and skipped.
-  defp push_each(records, push) do
-    Enum.reduce_while(records, {:ok, %{pushed: 0, failed: 0}}, fn record, {:ok, acc} ->
-      case push.(record) do
+  # a transaction the server refuses is counted and skipped.
+  defp push_transactions(profile) do
+    from(t in Transaction,
+      where: t.profile_id == ^profile.id and t.needs_push == true,
+      order_by: t.id,
+      preload: :attachments
+    )
+    |> Repo.all()
+    |> Enum.reduce_while({:ok, %{pushed: 0, failed: 0}}, fn transaction, {:ok, acc} ->
+      case push(profile, transaction) do
         :ok -> {:cont, {:ok, %{acc | pushed: acc.pushed + 1}}}
         {:error, reason} when reason in [:offline, :unauthorized] -> {:halt, {:error, reason}}
         {:error, _refused} -> {:cont, {:ok, %{acc | failed: acc.failed + 1}}}
@@ -214,132 +150,115 @@ defmodule DukaApp.Sync do
     end)
   end
 
-  # ── Pull ───────────────────────────────────────────────────────────────────
-
-  defp pull(profile) do
-    with {:ok, %{"receipts" => receipts}} <- Api.list_receipts(profile),
-         {:ok, %{"requests" => requests}} <- Api.list_requests(profile) do
-      {:ok, pull_receipts(profile, receipts) + pull_requests(profile, requests)}
+  defp push(profile, transaction) do
+    with {:ok, %{"transaction" => json}} <- Api.put_transaction(profile, transaction) do
+      mark_pushed(transaction, json)
     end
   end
 
-  # A receipt with unsent changes keeps its own state until it's pushed; one
-  # the phone doesn't have is added, unless it was just deleted here.
-  defp pull_receipts(profile, jsons) do
-    local = local_ids(Receipt, profile)
-    deleted = deleted_ids(profile, "receipt")
+  # Only if nobody edited the transaction while it was being sent. The
+  # attachments the server now has get their ids either way (matched by
+  # name and size), so they aren't sent again.
+  defp mark_pushed(transaction, json) do
+    from(t in Transaction,
+      where: t.id == ^transaction.id and t.updated_at == ^transaction.updated_at
+    )
+    |> Repo.update_all(
+      set:
+        [
+          needs_push: false,
+          photo_pushed: transaction.photo_path != nil,
+          remote_id: json["id"],
+          synced_at: now()
+        ] ++ decision(json)
+    )
 
-    Enum.reduce(jsons, 0, fn json, count ->
-      client_id = json["client_id"]
+    remote = Map.new(json["attachments"] || [], &{{&1["name"], &1["size"]}, &1["id"]})
 
-      cond do
-        MapSet.member?(local, client_id) ->
-          {updated, _} =
-            from(r in Receipt,
-              where:
-                r.profile_id == ^profile.id and r.client_id == ^client_id and
-                  r.needs_push == false
-            )
-            |> Repo.update_all(set: [remote_id: json["id"], synced_at: now()] ++ decision(json))
+    for attachment <- transaction.attachments,
+        is_nil(attachment.remote_id),
+        id = remote[{attachment.name, attachment.size}] do
+      attachment |> Ecto.Changeset.change(remote_id: id) |> Repo.update!()
+    end
 
-          count + updated
+    :ok
+  end
 
-        MapSet.member?(deleted, client_id) ->
-          count
+  # ── Pull ───────────────────────────────────────────────────────────────────
 
-        true ->
-          insert_receipt(profile, json)
-          count + 1
-      end
-    end)
+  # A transaction with unsent changes keeps its own state until it's pushed;
+  # one the phone doesn't have is added, unless it was just deleted here.
+  defp pull(profile) do
+    with {:ok, %{"transactions" => jsons}} <- Api.list_transactions(profile) do
+      known = %{local: local_ids(profile), deleted: deleted_ids(profile)}
+      {:ok, Enum.reduce(jsons, 0, &(&2 + pull_one(profile, &1, known)))}
+    end
+  end
+
+  # How many transactions on the phone this changed: 0 or 1.
+  defp pull_one(profile, %{"client_id" => client_id} = json, known) do
+    cond do
+      MapSet.member?(known.local, client_id) ->
+        {updated, _} =
+          from(t in Transaction,
+            where:
+              t.profile_id == ^profile.id and t.client_id == ^client_id and t.needs_push == false
+          )
+          |> Repo.update_all(set: [remote_id: json["id"], synced_at: now()] ++ decision(json))
+
+        updated
+
+      MapSet.member?(known.deleted, client_id) ->
+        0
+
+      true ->
+        insert_transaction(profile, json)
+        1
+    end
   end
 
   # The photo stays on the server until it's opened: `photo_path` names the
-  # file it will download to, and `photo_pushed` keeps it from going back up.
-  defp insert_receipt(profile, json) do
+  # file it will download to, and `photo_pushed` keeps it from going back
+  # up. Attachments are the same.
+  defp insert_transaction(profile, json) do
     has_photo? = json["has_photo"] == true
 
-    Repo.insert!(%Receipt{
-      profile_id: profile.id,
-      client_id: json["client_id"],
-      remote_id: json["id"],
-      date: Date.from_iso8601!(json["date"]),
-      vendor: json["vendor"],
-      description: json["description"],
-      amount_cents: json["amount_cents"],
-      category: json["category"],
-      source: json["source"] || "manual",
-      seller_pin: json["seller_pin"],
-      invoice_number: json["invoice_number"],
-      verify_url: json["verify_url"],
-      verified_at: parse_time(json["verified_at"]),
-      photo_path: if(has_photo?, do: "remote-#{json["id"]}.jpg"),
-      photo_pushed: has_photo?,
-      needs_push: false,
-      synced_at: now(),
-      approval_status: json["approval_status"] || "pending",
-      approval_note: json["approval_note"],
-      decided_at: parse_time(json["decided_at"])
-    })
-  end
-
-  defp pull_requests(profile, jsons) do
-    local = local_ids(Request, profile)
-    deleted = deleted_ids(profile, "request")
-
-    Enum.reduce(jsons, 0, fn json, count ->
-      client_id = json["client_id"]
-
-      cond do
-        MapSet.member?(local, client_id) ->
-          {updated, _} =
-            from(q in Request,
-              where: q.profile_id == ^profile.id and q.client_id == ^client_id
-            )
-            |> Repo.update_all(
-              set: [remote_id: json["id"], synced_at: now()] ++ request_decision(json)
-            )
-
-          count + updated
-
-        MapSet.member?(deleted, client_id) ->
-          count
-
-        true ->
-          insert_request(profile, json)
-          count + 1
-      end
-    end)
-  end
-
-  # Pulled after receipts, so a refund's receipt is already here to link to.
-  defp insert_request(profile, json) do
     Repo.transaction(fn ->
-      request =
-        Repo.insert!(%Request{
+      transaction =
+        Repo.insert!(%Transaction{
           profile_id: profile.id,
           client_id: json["client_id"],
           remote_id: json["id"],
-          kind: json["kind"],
-          status: json["status"] || "pending",
+          type: json["type"] || "expense",
+          pay_to: json["pay_to"],
+          date: Date.from_iso8601!(json["date"]),
+          vendor: json["vendor"],
+          description: json["description"],
           amount_cents: json["amount_cents"],
-          purpose: json["purpose"],
-          receipt_id: local_receipt_id(profile, json["receipt_client_id"]),
+          category: json["category"],
           method: json["method"],
           phone: json["phone"],
           till_number: json["till_number"],
           paybill_number: json["paybill_number"],
           account_number: json["account_number"],
-          payee_name: json["payee_name"],
-          submitted_at: parse_time(json["inserted_at"]),
+          source: json["source"] || "manual",
+          seller_pin: json["seller_pin"],
+          invoice_number: json["invoice_number"],
+          verify_url: json["verify_url"],
+          verified_at: parse_time(json["verified_at"]),
+          photo_path: if(has_photo?, do: "remote-#{json["id"]}.jpg"),
+          photo_pushed: has_photo?,
+          needs_push: false,
+          synced_at: now(),
+          status: json["status"] || "pending",
           decision_note: json["decision_note"],
           decided_at: parse_time(json["decided_at"]),
-          synced_at: now()
+          paid_at: parse_time(json["paid_at"])
         })
 
       Enum.each(json["attachments"] || [], fn attachment ->
         Repo.insert!(%Attachment{
-          request_id: request.id,
+          transaction_id: transaction.id,
           remote_id: attachment["id"],
           file_name: "remote-#{attachment["id"]}#{Path.extname(attachment["name"] || "")}",
           name: attachment["name"],
@@ -350,36 +269,25 @@ defmodule DukaApp.Sync do
     end)
   end
 
-  defp local_ids(schema, profile) do
-    from(r in schema, where: r.profile_id == ^profile.id, select: r.client_id)
+  defp local_ids(profile) do
+    from(t in Transaction, where: t.profile_id == ^profile.id, select: t.client_id)
     |> Repo.all()
     |> MapSet.new()
   end
 
-  defp local_receipt_id(_profile, nil), do: nil
-
-  defp local_receipt_id(profile, client_id) do
-    Repo.one(
-      from(r in Receipt,
-        where: r.profile_id == ^profile.id and r.client_id == ^client_id,
-        select: r.id
-      )
-    )
-  end
-
   # ── Files kept on the server ───────────────────────────────────────────────
 
-  @doc "Downloads a pulled receipt's photo to its `photo_path`, unless it's already here."
-  @spec fetch_photo(Profile.t(), Receipt.t()) :: :ok | {:error, term()}
-  def fetch_photo(profile, %Receipt{remote_id: id, photo_path: name}) when is_binary(name) do
+  @doc "Downloads a pulled transaction's photo to its `photo_path`, unless it's already here."
+  @spec fetch_photo(Profile.t(), Transaction.t()) :: :ok | {:error, term()}
+  def fetch_photo(profile, %Transaction{remote_id: id, photo_path: name}) when is_binary(name) do
     cond do
       Photos.exists?(name) -> :ok
-      is_binary(id) -> Api.download(profile, "/api/receipts/#{id}/photo", Photos.path(name))
+      is_binary(id) -> Api.download(profile, "/api/transactions/#{id}/photo", Photos.path(name))
       true -> {:error, :no_photo}
     end
   end
 
-  def fetch_photo(_profile, _receipt), do: {:error, :no_photo}
+  def fetch_photo(_profile, _transaction), do: {:error, :no_photo}
 
   @doc "Downloads a pulled attachment to its `file_name`, unless it's already here."
   @spec fetch_attachment(Profile.t(), Attachment.t()) :: :ok | {:error, term()}
@@ -393,17 +301,10 @@ defmodule DukaApp.Sync do
 
   defp decision(json) do
     [
-      approval_status: json["approval_status"] || "pending",
-      approval_note: json["approval_note"],
-      decided_at: parse_time(json["decided_at"])
-    ]
-  end
-
-  defp request_decision(json) do
-    [
       status: json["status"] || "pending",
       decision_note: json["decision_note"],
-      decided_at: parse_time(json["decided_at"])
+      decided_at: parse_time(json["decided_at"]),
+      paid_at: parse_time(json["paid_at"])
     ]
   end
 

@@ -1,13 +1,13 @@
 defmodule DukaApp.Screens.RequestFlowTest do
-  # Refund and payment requests, from the screens. async: false because
+  # Refunds and payment requests, from the screens. async: false because
   # Mob.ScreenCase screens share global state.
   use Mob.ScreenCase, async: false
 
-  alias DukaApp.{Accounts, Receipts, Requests}
-  alias DukaApp.Requests.Attachments
-  alias DukaApp.Screens.{ReceiptsScreen, RequestFormScreen}
+  alias DukaApp.{Accounts, Transactions}
+  alias DukaApp.Screens.{ReceiptFormScreen, ReceiptsScreen, RequestFormScreen}
+  alias DukaApp.Transactions.{Attachments, Transaction}
 
-  @extra [:header, :search_field, :receipt_item, :receipt_detail, :icon]
+  @extra [:header, :search_field, :transaction_item, :transaction_sheet, :icon]
 
   defp nav_action(view), do: view.socket.__mob__[:nav_action]
 
@@ -15,58 +15,72 @@ defmodule DukaApp.Screens.RequestFlowTest do
     DukaApp.DataCase.setup_sandbox(tags)
     {:ok, profile} = Accounts.sign_in("0712345678")
 
-    {:ok, receipt} =
-      Receipts.create_receipt(profile, Receipts.new_manual(), %{
+    {:ok, expense} =
+      Transactions.create_transaction(profile, Transactions.new_expense(), %{
         date: ~D[2026-09-20],
         vendor: "Naivas",
         amount_cents: 245_000,
         category: "Food & Groceries"
       })
 
-    %{profile: profile, receipt: receipt}
+    %{profile: profile, expense: expense}
   end
 
-  test "a receipt's sheet asks for a refund, then shows it pending", %{
+  test "an expense's sheet asks for a refund, and the expense becomes one", %{
     profile: profile,
-    receipt: receipt
+    expense: expense
   } do
     view =
       ReceiptsScreen
       |> mount_screen()
       |> render_info({:select, :receipts, 0})
 
-    assert assigns(view).selected_refund == nil
+    assert %Transaction{type: "expense"} = assigns(view).selected
     view = render_info(view, {:tap, :request_refund})
 
     assert nav_action(view) ==
-             {:push, RequestFormScreen, %{receipt_id: receipt.id, notify: self()}}
+             {:push, RequestFormScreen, %{refund_of: expense.id, notify: self()}}
 
-    form = mount_screen(RequestFormScreen, %{receipt_id: receipt.id})
+    form = mount_screen(RequestFormScreen, %{refund_of: expense.id})
     assert assigns(form).phone == "0712 345 678"
     assert_renderable(form, extra: @extra)
 
     form =
       form
-      |> render_info({:change, :purpose, "Client lunch"})
+      |> render_info({:change, :description, "Client lunch"})
       |> render_info({:tap, :submit})
 
     assert nav_action(form) == {:pop}
 
-    assert [%{kind: "refund", amount_cents: 245_000, purpose: "Client lunch", status: "pending"}] =
-             Requests.list_requests(profile)
+    assert [
+             %{
+               type: "refund",
+               pay_to: "self",
+               amount_cents: 245_000,
+               description: "Client lunch",
+               method: "send_money",
+               status: "pending"
+             }
+           ] = Transactions.list_transactions(profile)
 
-    # The home list now has the refund too; the Food filter shows the receipt.
+    # It shows under Refunds & payments, and its sheet can take it back.
     view =
       ReceiptsScreen
       |> mount_screen()
-      |> render_info({:tap, {:group, :food}})
+      |> render_info({:tap, {:group, :claims}})
       |> render_info({:select, :receipts, 0})
 
-    assert %{status: "pending"} = assigns(view).selected_refund
+    assert %Transaction{type: "refund"} = assigns(view).selected
     assert_renderable(view, extra: @extra)
+
+    view = render_info(view, {:alert, :confirm_cancel_refund})
+    assert %Transaction{type: "expense", method: nil} = assigns(view).selected
+    assert [%{type: "expense"}] = Transactions.list_transactions(profile)
   end
 
-  test "a payment request picks how to pay and shows up in the home list", %{profile: profile} do
+  test "a payment request says who's paid, picks how, and shows up in the home list", %{
+    profile: profile
+  } do
     home = mount_screen(ReceiptsScreen)
 
     # The + button offers it; so does the action sheet it opens.
@@ -78,19 +92,24 @@ defmodule DukaApp.Screens.RequestFlowTest do
       RequestFormScreen
       |> mount_screen(%{notify: self()})
       |> render_info({:change, :amount, "2,500"})
-      |> render_info({:change, :purpose, "Electricity"})
+      |> render_info({:change, :description, "Electricity"})
       |> render_info({:change, :phone, "0722000111"})
       |> render_info({:tap, {:method, "paybill"}})
+      # The category sheet is native; this is the answer it sends back.
+      |> render_info({:alert, :category_4})
 
     assert_renderable(form, extra: @extra)
 
-    # Paybill needs its numbers; the phone typed earlier isn't sent.
+    # Paybill needs its numbers and the payee a name; the phone typed
+    # earlier isn't sent.
     form = render_info(form, {:tap, :submit})
     assert assigns(form).errors[:paybill_number]
-    assert Requests.list_requests(profile) == []
+    assert assigns(form).errors[:vendor]
+    assert Transactions.list_transactions(profile, "", :claims) == []
 
     form =
       form
+      |> render_info({:change, :vendor, "Kenya Power"})
       |> render_info({:change, :paybill_number, "888880"})
       |> render_info({:change, :account_number, "1234567"})
       |> render_info({:tap, :submit})
@@ -99,6 +118,10 @@ defmodule DukaApp.Screens.RequestFlowTest do
     assert_received {:request_saved, request}
 
     assert %{
+             type: "payment_request",
+             pay_to: "supplier",
+             vendor: "Kenya Power",
+             category: "Utilities",
              method: "paybill",
              paybill_number: "888880",
              account_number: "1234567",
@@ -107,16 +130,35 @@ defmodule DukaApp.Screens.RequestFlowTest do
            } = request
 
     home = render_info(home, {:request_saved, request})
+    assert Enum.any?(assigns(home).items, &(&1.id == request.id))
 
-    assert Enum.any?(
-             assigns(home).items,
-             &(&1.id == request.id and is_struct(&1, DukaApp.Requests.Request))
-           )
-
-    home = render_info(home, {:tap, {:group, :requests}})
-    assert [%DukaApp.Requests.Request{id: id}] = assigns(home).items
+    home = render_info(home, {:tap, {:group, :claims}})
+    assert [%Transaction{id: id}] = assigns(home).items
     assert id == request.id
     assert_renderable(home, extra: @extra)
+
+    # Editing it opens this form again, not the receipt form.
+    home = render_info(home, {:select, :receipts, 0}) |> render_info({:tap, :edit_transaction})
+    assert {:push, RequestFormScreen, %{id: ^id}} = nav_action(home)
+
+    form =
+      RequestFormScreen
+      |> mount_screen(%{id: id, notify: self()})
+      |> render_info({:tap, {:pay_to, "self"}})
+      |> render_info({:tap, :submit})
+
+    assert_received {:request_saved, %{pay_to: "self", vendor: "Kenya Power"}}
+    assert nav_action(form) == {:pop}
+  end
+
+  test "an expense is edited on the receipt form", %{expense: expense} do
+    view =
+      ReceiptsScreen
+      |> mount_screen()
+      |> render_info({:select, :receipts, 0})
+      |> render_info({:tap, :edit_transaction})
+
+    assert nav_action(view) == {:push, ReceiptFormScreen, %{id: expense.id}}
   end
 
   test "a bad amount is reported and nothing is saved", %{profile: profile} do
@@ -124,20 +166,20 @@ defmodule DukaApp.Screens.RequestFlowTest do
       RequestFormScreen
       |> mount_screen()
       |> render_info({:change, :amount, "lots"})
-      |> render_info({:change, :purpose, "Fuel"})
+      |> render_info({:change, :vendor, "Shell"})
       |> render_info({:change, :phone, "0722000111"})
       |> render_info({:tap, :submit})
 
     assert assigns(form).errors[:amount]
-    assert Requests.list_requests(profile) == []
+    assert Transactions.list_transactions(profile, "", :claims) == []
   end
 
-  test "a pending request can be withdrawn from its sheet", %{profile: profile} do
+  test "a pending request can be deleted from its sheet", %{profile: profile} do
     {:ok, _} =
-      Requests.create_request(profile, Requests.new_payment(), %{
-        kind: "payment",
+      Transactions.create_transaction(profile, Transactions.new_payment(), %{
+        vendor: "Safaricom",
         amount_cents: 1_000,
-        purpose: "Airtime",
+        description: "Airtime",
         method: "till",
         till_number: "832909"
       })
@@ -145,17 +187,17 @@ defmodule DukaApp.Screens.RequestFlowTest do
     view =
       ReceiptsScreen
       |> mount_screen()
-      |> render_info({:tap, {:group, :requests}})
+      |> render_info({:tap, {:group, :claims}})
       |> render_info({:select, :receipts, 0})
 
-    assert assigns(view).selected_request
+    assert %Transaction{type: "payment_request"} = assigns(view).selected
     assert_renderable(view, extra: @extra)
 
     # The confirm alert is native; this is the answer it sends back.
-    view = render_info(view, {:alert, :confirm_cancel})
+    view = render_info(view, {:alert, :confirm_delete})
 
     assert assigns(view).items == []
-    assert Requests.list_requests(profile) == []
+    assert Transactions.list_transactions(profile, "", :claims) == []
   end
 
   describe "attachments" do
@@ -165,7 +207,8 @@ defmodule DukaApp.Screens.RequestFlowTest do
       RequestFormScreen
       |> mount_screen(%{notify: self()})
       |> render_info({:change, :amount, "5000"})
-      |> render_info({:change, :purpose, "Printer toner"})
+      |> render_info({:change, :vendor, "Toner Supplies"})
+      |> render_info({:change, :description, "Printer toner"})
       |> render_info({:tap, {:method, "till"}})
       |> render_info({:change, :till_number, "832909"})
     end
@@ -212,12 +255,13 @@ defmodule DukaApp.Screens.RequestFlowTest do
       form = render_info(form, {:tap, :submit})
       assert_received {:request_saved, request}
       assert [%{name: "Photo 1.jpg"}, %{name: "Quote.pdf"}] = request.attachments
-      assert [%{attachments: [_, _]}] = Requests.list_requests(profile)
+
+      assert [%{attachments: [_, _]}] = Transactions.list_transactions(profile, "", :claims)
 
       view =
         ReceiptsScreen
         |> mount_screen()
-        |> render_info({:tap, {:group, :requests}})
+        |> render_info({:tap, {:group, :claims}})
         |> render_info({:select, :receipts, 0})
 
       assert_renderable(view, extra: @extra)
@@ -227,8 +271,8 @@ defmodule DukaApp.Screens.RequestFlowTest do
       path = Attachments.path(pdf.file_name)
       assert_received {:native, :open_file, [^path]}
 
-      # Withdrawing the request deletes its files.
-      render_info(view, {:alert, :confirm_cancel})
+      # Deleting the request deletes its files.
+      render_info(view, {:alert, :confirm_delete})
       refute File.exists?(path)
       _ = form
     end

@@ -4,7 +4,7 @@ defmodule DukaApp.Screens.PhotoFlowTest do
   # process; the tests then feed back the reply the phone would send.
   use Mob.ScreenCase, async: false
 
-  alias DukaApp.{Accounts, Receipts}
+  alias DukaApp.{Accounts, Transactions}
   alias DukaApp.Receipts.Photos
   alias DukaApp.Screens.{ReceiptFormScreen, ReceiptsScreen}
 
@@ -82,13 +82,13 @@ defmodule DukaApp.Screens.PhotoFlowTest do
       assert_renderable(view, extra: [:header, :icon])
 
       render_info(view, {:tap, :save})
-      assert [receipt] = Receipts.list_receipts(profile)
-      assert Receipts.verified?(receipt)
+      assert [receipt] = Transactions.list_transactions(profile)
+      assert Transactions.verified?(receipt)
     end
 
     defp save_kra_receipt(profile, cents \\ 200_000) do
       {:ok, receipt} =
-        Receipts.create_receipt(profile, Receipts.new_from_qr(@etims), %{
+        Transactions.create_transaction(profile, Transactions.new_from_qr(@etims), %{
           date: ~D[2026-09-20],
           vendor: "Stabex",
           amount_cents: cents,
@@ -100,14 +100,14 @@ defmodule DukaApp.Screens.PhotoFlowTest do
 
     test "saved KRA receipts are verified quietly in the background", %{profile: profile} do
       receipt = save_kra_receipt(profile)
-      refute Receipts.verified?(receipt)
+      refute Transactions.verified?(receipt)
 
       view = mount_screen(ReceiptsScreen)
       ref = {:verify, receipt.id}
       assert_received {:native, :lookup_kra, [@etims, ^ref]}
 
       render_info(view, {:kra, :result, @kra_details, ref})
-      assert Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
+      assert Transactions.verified?(Transactions.get_transaction!(profile, receipt.id))
       refute_received {:native, :toast, _}
     end
 
@@ -119,7 +119,7 @@ defmodule DukaApp.Screens.PhotoFlowTest do
       render_info(view, {:kra, :error, :nxdomain, {:verify, receipt.id}})
       refute_received {:native, :lookup_kra, _}
       refute_received {:native, :toast, _}
-      refute Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
+      refute Transactions.verified?(Transactions.get_transaction!(profile, receipt.id))
     end
 
     test "tapping Verify tells the user how it went", %{profile: profile} do
@@ -139,13 +139,13 @@ defmodule DukaApp.Screens.PhotoFlowTest do
 
       view = render_info(view, {:kra, :result, @kra_details, ref})
 
-      assert Receipts.verified?(assigns(view).selected)
-      assert Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
+      assert Transactions.verified?(assigns(view).selected)
+      assert Transactions.verified?(Transactions.get_transaction!(profile, receipt.id))
       # The saved total differs from KRA's, so the user is told.
       assert_received {:native, :toast, ["Verified with KRA — but KRA's total is Ksh 1,998.45"]}
 
       assert_renderable(view,
-        extra: [:header, :icon, :receipt_item, :receipt_detail, :search_field]
+        extra: [:header, :icon, :transaction_item, :transaction_sheet, :search_field]
       )
     end
 
@@ -158,13 +158,13 @@ defmodule DukaApp.Screens.PhotoFlowTest do
       |> render_info({:tap, :verify_receipt})
       |> render_info({:kra, :error, :timeout, {:verify, receipt.id}})
 
-      refute Receipts.verified?(Receipts.get_receipt!(profile, receipt.id))
+      refute Transactions.verified?(Transactions.get_transaction!(profile, receipt.id))
       assert_received {:native, :toast, ["Couldn't reach KRA" <> _]}
     end
 
     test "the photo opens full screen and can be saved to the gallery", %{profile: profile} do
       {:ok, _} =
-        Receipts.create_receipt(profile, Receipts.new_manual(), %{
+        Transactions.create_transaction(profile, Transactions.new_expense(), %{
           date: ~D[2026-09-20],
           vendor: "Naivas",
           amount_cents: 1_000,
@@ -264,7 +264,7 @@ defmodule DukaApp.Screens.PhotoFlowTest do
     view = view |> render_info({:alert, :category_0}) |> render_info({:tap, :save})
     assert {:reset, ReceiptsScreen, _, _} = nav_action(view)
 
-    assert [receipt] = Receipts.list_receipts(profile)
+    assert [receipt] = Transactions.list_transactions(profile)
     assert receipt.photo_path == Path.basename(dest)
     assert receipt.ocr_text == @ocr_text
     assert receipt.seller_pin == "P051234567X"
@@ -272,7 +272,7 @@ defmodule DukaApp.Screens.PhotoFlowTest do
     assert File.exists?(Photos.path(receipt.photo_path))
 
     # Search covers the text read off the photo.
-    assert [_] = Receipts.list_receipts(profile, "p051234567x")
+    assert [_] = Transactions.list_transactions(profile, "p051234567x")
   end
 
   test "text read off a photo never overwrites what the user typed" do
@@ -326,7 +326,7 @@ defmodule DukaApp.Screens.PhotoFlowTest do
 
   test "a photo whose QR is already saved warns about the duplicate", %{profile: profile} do
     {:ok, _} =
-      Receipts.create_receipt(profile, Receipts.new_from_qr(@etims), %{
+      Transactions.create_transaction(profile, Transactions.new_from_qr(@etims), %{
         date: ~D[2026-09-20],
         vendor: "Naivas",
         amount_cents: 1_000,
@@ -345,8 +345,8 @@ defmodule DukaApp.Screens.PhotoFlowTest do
     |> render_info(ocr_reply(dest, @ocr_text))
     |> render_info({:tap, :save})
 
-    [receipt] = Receipts.list_receipts(profile)
-    {:ok, _} = Receipts.delete_receipt(receipt)
+    [receipt] = Transactions.list_transactions(profile)
+    {:ok, _} = Transactions.delete_transaction(receipt)
     refute File.exists?(dest)
   end
 

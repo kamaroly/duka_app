@@ -1,12 +1,12 @@
 defmodule DukaApp.Screens.ApprovalsScreen do
   @moduledoc """
-  The manager's inbox: receipts to approve as expenses, and refund and
-  payment requests to approve, reject or mark paid.
+  The approver's inbox: transactions — expenses, refunds and payment
+  requests — to approve or reject, and approved refunds and payments to
+  mark paid.
 
   Two cards at the top say what's waiting and switch between the lists.
   Tapping an item opens its details with the decision buttons; rejecting
-  needs a note so the person knows what to fix. Approved requests stay
-  listed until they're marked paid.
+  needs a note so the person knows what to fix.
 
   Everything comes from the team's server (`DukaApp.Api`), in the
   background; the decisions go straight back to it. Receipt photos and
@@ -17,11 +17,10 @@ defmodule DukaApp.Screens.ApprovalsScreen do
 
   use Mob.Screen
 
-  alias DukaApp.{Accounts, Api, DataDir, Native, Receipts, Remote, Requests}
+  alias DukaApp.{Accounts, Api, DataDir, Native, Remote, Transactions}
   alias DukaApp.Accounts.Profile
-  alias DukaApp.Components.{ActionButton, FormField, Header, KraBadge, ReceiptItem, RequestItem}
-  alias DukaApp.Receipts.Receipt
-  alias DukaApp.Requests.{Attachment, Request}
+  alias DukaApp.Components.{ActionButton, FormField, Header, KraBadge, TransactionItem}
+  alias DukaApp.Transactions.{Attachment, Transaction}
 
   @impl Mob.Screen
   def mount(_params, _session, socket) do
@@ -30,13 +29,12 @@ defmodule DukaApp.Screens.ApprovalsScreen do
     socket =
       socket
       |> Mob.Socket.assign(:profile, profile)
-      |> Mob.Socket.assign(:tab, if(profile.can_approve_receipts, do: :receipts, else: :requests))
-      |> Mob.Socket.assign(:receipts, [])
-      |> Mob.Socket.assign(:requests, [])
+      |> Mob.Socket.assign(:tab, if(profile.can_approve, do: :decide, else: :pay))
+      |> Mob.Socket.assign(:transactions, [])
       |> Mob.Socket.assign(:items, [])
       |> Mob.Socket.assign(:summary, %{
-        receipts: %{count: 0, total: 0},
-        requests: %{count: 0, total: 0}
+        decide: %{count: 0, total: 0},
+        pay: %{count: 0, total: 0}
       })
       |> Mob.Socket.assign(:loading, true)
       |> Mob.Socket.assign(:busy, false)
@@ -54,11 +52,11 @@ defmodule DukaApp.Screens.ApprovalsScreen do
   def render(assigns) do
     ~MOB"""
     <Column background={:background} fill_height={true}>
-      <Header title="Approvals" subtitle="Expenses and requests from your team" show_back={true} />
+      <Header title="Approvals" subtitle="Expenses, refunds and payments" show_back={true} />
       <Row fill_width={true} padding_left={18} padding_right={18}>
-        {tab_card(:receipts, "Receipts", @summary.receipts, @tab)}
+        {tab_card(:decide, "To decide", @summary.decide, @tab)}
         <Spacer size={10} />
-        {tab_card(:requests, "Requests", @summary.requests, @tab)}
+        {tab_card(:pay, "To pay", @summary.pay, @tab)}
       </Row>
       <Spacer size={14} />
       <Text
@@ -110,13 +108,13 @@ defmodule DukaApp.Screens.ApprovalsScreen do
           letter_spacing={-0.6}
           text_color={:on_surface}
         />
-        <Text text={Receipts.format_short(total)} text_size={12} text_color={:muted} />
+        <Text text={Transactions.format_short(total)} text_size={12} text_color={:muted} />
       </Column>
     </Box>
     """
   end
 
-  # List items: section headings, then receipts or requests with who sent them.
+  # List items: a section heading, then transactions with who sent them.
   defp item({:heading, text}) do
     ~MOB"""
     <Text
@@ -131,20 +129,11 @@ defmodule DukaApp.Screens.ApprovalsScreen do
     """
   end
 
-  defp item(%Receipt{} = receipt) do
+  defp item(%Transaction{} = transaction) do
     ~MOB"""
     <Column fill_width={true}>
-      {from_line(receipt.profile)}
-      {ReceiptItem.expand(%{receipt: receipt}, [], %{})}
-    </Column>
-    """
-  end
-
-  defp item(%Request{} = request) do
-    ~MOB"""
-    <Column fill_width={true}>
-      {from_line(request.profile)}
-      {RequestItem.row(request)}
+      {from_line(transaction.profile)}
+      {TransactionItem.expand(%{transaction: transaction}, [], %{})}
     </Column>
     """
   end
@@ -168,7 +157,7 @@ defmodule DukaApp.Screens.ApprovalsScreen do
   defp decision_sheet(%{selected: selected} = assigns) do
     ~MOB"""
     <Sheet
-      id={"approval-#{sheet_id(selected)}"}
+      id={"approval-#{selected.id}"}
       detents={[:content]}
       background={:background}
       corner_radius={28}
@@ -188,7 +177,7 @@ defmodule DukaApp.Screens.ApprovalsScreen do
             <Text text={"From #{who(selected.profile)}"} text_size={13} text_color={:muted} />
             <Spacer size={6} />
             <Row>
-              {status_pill(selected)}
+              {TransactionItem.status_pill(selected.status)}
             </Row>
           </Column>
           <Spacer size={12} />
@@ -203,48 +192,25 @@ defmodule DukaApp.Screens.ApprovalsScreen do
     """
   end
 
-  defp body(%Receipt{} = receipt) do
+  defp body(transaction) do
     ~MOB"""
     <Column fill_width={true}>
-      <Box
-        background={:surface}
-        border_color={:border}
-        border_width={1}
-        corner_radius={16}
-        padding={14}
-        fill_width={true}
-      >
-        <Column fill_width={true}>
-          <Text text="Amount" text_size={12} text_color={:muted} />
-          <Text
-            text={Receipts.format_amount(receipt.amount_cents)}
-            text_size={22}
-            font_weight="bold"
-            text_color={:on_surface}
-          />
-        </Column>
-      </Box>
-      {kra_line(receipt)}
-      {detail_row("Date", Calendar.strftime(receipt.date, "%a, %d %b %Y"))}
-      {detail_row("Category", receipt.category)}
-      {detail_row("Description", receipt.description)}
-      {detail_row("Manager's note", receipt.approval_note)}
-      {photo_row(receipt)}
+      {TransactionItem.details(transaction)}
+      {kra_line(transaction)}
+      {photo_row(transaction)}
     </Column>
     """
   end
 
-  defp body(%Request{} = request), do: RequestItem.details(request)
-
-  defp kra_line(receipt) do
-    if Receipts.kra?(receipt) do
+  defp kra_line(transaction) do
+    if Transactions.kra?(transaction) do
       ~MOB"""
       <Row fill_width={true} align={:center} padding_top={10}>
-        {KraBadge.badge(receipt)}
+        {KraBadge.badge(transaction)}
         <Text
-          text={if(Receipts.verified?(receipt), do: "Verified with KRA", else: "Not verified with KRA yet")}
+          text={if(Transactions.verified?(transaction), do: "Verified with KRA", else: "Not verified with KRA yet")}
           text_size={13}
-          text_color={if(Receipts.verified?(receipt), do: :secondary, else: :muted)}
+          text_color={if(Transactions.verified?(transaction), do: :secondary, else: :muted)}
           font_weight="medium"
           weight={1}
         />
@@ -256,8 +222,8 @@ defmodule DukaApp.Screens.ApprovalsScreen do
   end
 
   # The photo is on the server; it downloads when opened.
-  defp photo_row(%Receipt{} = receipt) do
-    if Map.get(receipt, :has_photo) do
+  defp photo_row(transaction) do
+    if Map.get(transaction, :has_photo) do
       ~MOB"""
       <Column fill_width={true} padding_top={10}>
         {ActionButton.button("image", "Open the receipt photo", :open_photo, style: :secondary)}
@@ -268,22 +234,12 @@ defmodule DukaApp.Screens.ApprovalsScreen do
     end
   end
 
-  defp detail_row(_label, value) when value in [nil, ""], do: []
-
-  defp detail_row(label, value) do
-    ~MOB"""
-    <Column fill_width={true} padding_top={10}>
-      <Text text={label} text_size={12} text_color={:muted} />
-      <Text text={value} text_size={14} text_color={:on_background} max_lines={3} />
-    </Column>
-    """
-  end
-
-  # Waiting items get a note and Approve / Reject; an approved request gets
-  # Mark as paid; anything else is already settled.
-  defp actions(%{selected: selected} = assigns) do
+  # Waiting items get a note and Approve / Reject; an approved claim gets
+  # Mark as paid; anything else is already settled. Each only for someone
+  # who may do it.
+  defp actions(%{selected: selected, profile: profile} = assigns) do
     cond do
-      waiting?(selected) ->
+      selected.status == "pending" and profile.can_approve ->
         ~MOB"""
         <Column fill_width={true}>
           {FormField.field(
@@ -301,7 +257,7 @@ defmodule DukaApp.Screens.ApprovalsScreen do
         </Column>
         """
 
-      match?(%Request{status: "approved"}, selected) ->
+      selected.status == "approved" and Transaction.claim?(selected) and profile.can_mark_paid ->
         ActionButton.button("payments", "Mark as paid", :mark_paid)
 
       true ->
@@ -318,26 +274,19 @@ defmodule DukaApp.Screens.ApprovalsScreen do
 
   def handle_info(:server_changed, socket), do: {:noreply, load(socket)}
 
-  def handle_info({:loaded, {receipts, requests}}, socket) do
-    case {receipts, requests} do
-      {{:ok, receipts}, {:ok, requests}} ->
-        {:noreply,
-         socket
-         |> Mob.Socket.assign(
-           loading: false,
-           receipts: Enum.map(receipts, &Remote.receipt/1),
-           requests: Enum.map(requests, &Remote.request/1)
-         )
-         |> show()}
+  def handle_info({:loaded, {:ok, %{"transactions" => transactions}}}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(
+       loading: false,
+       transactions: Enum.map(transactions, &Remote.transaction/1)
+     )
+     |> show()}
+  end
 
-      {{:error, error}, _} ->
-        {:noreply,
-         socket |> Mob.Socket.assign(:loading, false) |> Native.toast(Api.error_message(error))}
-
-      {_, {:error, error}} ->
-        {:noreply,
-         socket |> Mob.Socket.assign(:loading, false) |> Native.toast(Api.error_message(error))}
-    end
+  def handle_info({:loaded, {:error, error}}, socket) do
+    {:noreply,
+     socket |> Mob.Socket.assign(:loading, false) |> Native.toast(Api.error_message(error))}
   end
 
   def handle_info({:select, :approvals, index}, socket), do: select(socket, index)
@@ -375,8 +324,8 @@ defmodule DukaApp.Screens.ApprovalsScreen do
 
   def handle_info({:tap, :open_photo}, socket) do
     case socket.assigns.selected do
-      %Receipt{id: id} ->
-        {:noreply, download(socket, "/api/receipts/#{id}/photo", "receipt-#{id}.jpg")}
+      %Transaction{id: id} ->
+        {:noreply, download(socket, "/api/transactions/#{id}/photo", "receipt-#{id}.jpg")}
 
       _ ->
         {:noreply, socket}
@@ -384,7 +333,7 @@ defmodule DukaApp.Screens.ApprovalsScreen do
   end
 
   def handle_info({:tap, {:open_attachment, id}}, socket) do
-    with %Request{attachments: attachments} <- socket.assigns.selected,
+    with %Transaction{attachments: attachments} <- socket.assigns.selected,
          %Attachment{name: name} <- Enum.find(attachments, &(&1.id == id)) do
       {:noreply, download(socket, "/api/attachments/#{id}", "#{id}-#{name}")}
     else
@@ -410,16 +359,12 @@ defmodule DukaApp.Screens.ApprovalsScreen do
     note = if String.trim(note) == "", do: nil, else: String.trim(note)
     verb = Atom.to_string(decision)
 
-    call =
-      case selected do
-        %Receipt{id: id} -> fn -> Api.decide_receipt(profile, id, verb, note) end
-        %Request{id: id} -> fn -> Api.decide_request(profile, id, verb, note) end
-      end
-
     {:noreply,
      socket
      |> Mob.Socket.assign(:busy, true)
-     |> Native.background({:decided, done_message}, call)}
+     |> Native.background({:decided, done_message}, fn ->
+       Api.decide(profile, selected.id, verb, note)
+     end)}
   end
 
   defp done(socket, message) do
@@ -438,7 +383,6 @@ defmodule DukaApp.Screens.ApprovalsScreen do
     end
   end
 
-  # Fetches both lists (only the ones this person may approve).
   # One Approvals screen at a time; the name frees itself when it closes.
   defp listen_for_pushes do
     Process.register(self(), __MODULE__)
@@ -446,34 +390,25 @@ defmodule DukaApp.Screens.ApprovalsScreen do
     ArgumentError -> :already_open
   end
 
+  # Everything waiting on an approver, from the server.
   defp load(socket) do
     profile = socket.assigns.profile
-
-    Native.background(socket, :loaded, fn ->
-      {fetch(profile.can_approve_receipts, fn -> Api.approval_receipts(profile) end, "receipts"),
-       fetch(profile.can_approve_requests, fn -> Api.approval_requests(profile) end, "requests")}
-    end)
-  end
-
-  defp fetch(false, _call, _key), do: {:ok, []}
-
-  defp fetch(true, call, key) do
-    with {:ok, body} <- call.(), do: {:ok, Map.get(body, key, [])}
+    Native.background(socket, :loaded, fn -> Api.approvals(profile) end)
   end
 
   defp show(socket) do
-    %{receipts: receipts, requests: requests, tab: tab} = socket.assigns
-    {pending, to_pay} = Enum.split_with(requests, &(&1.status == "pending"))
+    %{transactions: transactions, tab: tab} = socket.assigns
+    {pending, to_pay} = Enum.split_with(transactions, &(&1.status == "pending"))
 
     items =
       case tab do
-        :receipts -> section("Waiting for you", receipts)
-        :requests -> section("Waiting for you", pending) ++ section("Approved — to pay", to_pay)
+        :decide -> section("Waiting for you", pending)
+        :pay -> section("Approved — to pay", to_pay)
       end
 
     Mob.Socket.assign(socket,
       items: items,
-      summary: %{receipts: totals(receipts), requests: totals(pending)}
+      summary: %{decide: totals(pending), pay: totals(to_pay)}
     )
   end
 
@@ -497,27 +432,19 @@ defmodule DukaApp.Screens.ApprovalsScreen do
 
   # ── Labels ──────────────────────────────────────────────────────────────────
 
-  defp waiting?(%Receipt{approval_status: "pending"}), do: true
-  defp waiting?(%Request{status: "pending"}), do: true
-  defp waiting?(_item), do: false
+  defp title(%Transaction{type: "expense", vendor: vendor}), do: vendor
 
-  defp title(%Receipt{vendor: vendor}), do: vendor
-  defp title(%Request{} = request), do: RequestItem.headline(request)
-
-  defp status_pill(%Request{status: status}), do: RequestItem.status_pill(status)
-  defp status_pill(%Receipt{approval_status: status}), do: RequestItem.status_pill(status)
-
-  defp sheet_id(%Receipt{id: id}), do: "receipt-#{id}"
-  defp sheet_id(%Request{id: id}), do: "request-#{id}"
+  defp title(%Transaction{type: type, vendor: vendor}),
+    do: "#{Transactions.type_label(type)} · #{vendor}"
 
   defp who(%Profile{name: name, phone: phone}) when is_binary(name) and name != "",
-    do: "#{name} · #{Requests.local_phone(phone)}"
+    do: "#{name} · #{Transactions.local_phone(phone)}"
 
-  defp who(%Profile{phone: phone}), do: Requests.local_phone(phone)
+  defp who(%Profile{phone: phone}), do: Transactions.local_phone(phone)
   defp who(_profile), do: "someone"
 
-  defp empty_text(:receipts),
-    do: "No receipts yet. Receipts your team saves appear here for approval."
+  defp empty_text(:decide),
+    do: "Nothing to decide. Expenses, refunds and payment requests from your team appear here."
 
-  defp empty_text(:requests), do: "No requests yet. Refund and payment requests appear here."
+  defp empty_text(:pay), do: "Nothing to pay. Approved refunds and payments appear here."
 end

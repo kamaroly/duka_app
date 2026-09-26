@@ -118,7 +118,7 @@ defmodule DukaApp.Receipts.QrParser do
 
   defp find_total(text) do
     with [_, amount] <- Regex.run(~r/total[^0-9]{0,20}([\d,]+(?:\.\d{1,2})?)/i, text),
-         {:ok, cents} <- DukaApp.Receipts.parse_amount(amount) do
+         {:ok, cents} <- DukaApp.Transactions.parse_amount(amount) do
       cents
     else
       _ -> nil

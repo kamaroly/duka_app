@@ -1,14 +1,16 @@
 defmodule DukaApp.Screens.ReceiptFormScreen do
   @moduledoc """
-  Confirm a scanned receipt, add one by hand, or edit a saved one.
+  Confirm a scanned receipt, add an expense by hand, or edit a saved
+  transaction's figures (a refund's too; a payment request is edited on
+  `RequestFormScreen`).
 
   Mount params:
 
     * `%{photo: tmp_path}` — a photo was just taken: save it and read it
       (OCR + QR) on the phone, then pre-fill the form.
     * `%{qr: content}` — a QR code was just scanned.
-    * `%{id: id}` — edit a saved receipt.
-    * `%{}` — enter a receipt by hand.
+    * `%{id: id}` — edit a saved transaction.
+    * `%{}` — enter an expense by hand.
 
   A photo can be added, retaken or removed from any of these, and a QR code
   scanned when the photo didn't contain a readable one.
@@ -21,11 +23,12 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
 
   use Mob.Screen
 
-  alias DukaApp.{Accounts, Native, Receipts}
+  alias DukaApp.{Accounts, Native, Transactions}
   alias DukaApp.Components.{ActionButton, FormField, KraBadge}
-  alias DukaApp.Receipts.{OcrParser, Photos, QrParser, Receipt}
+  alias DukaApp.Receipts.{OcrParser, Photos, QrParser}
+  alias DukaApp.Transactions.Transaction
 
-  @categories Receipt.categories()
+  @categories Transaction.categories()
   @category_actions @categories
                     |> Enum.with_index()
                     |> Map.new(fn {category, i} -> {:"category_#{i}", category} end)
@@ -38,9 +41,9 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
 
     {mode, receipt} =
       case params do
-        %{id: id} -> {:edit, Receipts.get_receipt!(profile, id)}
-        %{qr: qr} -> {:new, Receipts.new_from_qr(qr)}
-        _ -> {:new, Receipts.new_manual()}
+        %{id: id} -> {:edit, Transactions.get_transaction!(profile, id)}
+        %{qr: qr} -> {:new, Transactions.new_from_qr(qr)}
+        _ -> {:new, Transactions.new_expense()}
       end
 
     socket =
@@ -54,7 +57,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
       |> Mob.Socket.assign(:date, Date.to_iso8601(receipt.date))
       |> Mob.Socket.assign(:vendor, receipt.vendor || "")
       |> Mob.Socket.assign(:description, receipt.description || "")
-      |> Mob.Socket.assign(:amount, Receipts.amount_input(receipt.amount_cents))
+      |> Mob.Socket.assign(:amount, Transactions.amount_input(receipt.amount_cents))
       |> Mob.Socket.assign(:category, receipt.category)
       |> Mob.Socket.assign(:touched, MapSet.new())
       # Fields filled from KRA's record, which a photo read must not overwrite.
@@ -207,7 +210,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
     """
   end
 
-  defp photo_section(%{receipt: %Receipt{photo_path: nil}}) do
+  defp photo_section(%{receipt: %Transaction{photo_path: nil}}) do
     ActionButton.button("camera", "Add receipt photo", :take_photo, style: :secondary)
   end
 
@@ -247,11 +250,11 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
     end
   end
 
-  defp qr_section(%{receipt: %Receipt{qr_content: nil}, reading: false}) do
+  defp qr_section(%{receipt: %Transaction{qr_content: nil}, reading: false}) do
     ActionButton.button("qr_code", "Scan the receipt's QR code", :scan_qr, style: :secondary)
   end
 
-  defp qr_section(%{receipt: %Receipt{qr_content: nil}}), do: []
+  defp qr_section(%{receipt: %Transaction{qr_content: nil}}), do: []
 
   defp qr_section(%{receipt: receipt}) do
     ~MOB"""
@@ -478,8 +481,14 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
 
     result =
       case mode do
-        :new -> Receipts.create_receipt(profile, receipt, attrs)
-        :edit -> Receipts.update_receipt(Receipts.get_receipt!(profile, receipt.id), attrs)
+        :new ->
+          Transactions.create_transaction(profile, receipt, attrs)
+
+        :edit ->
+          Transactions.update_transaction(
+            Transactions.get_transaction!(profile, receipt.id),
+            attrs
+          )
       end
 
     case result do
@@ -492,6 +501,9 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
         {:noreply,
          Mob.Socket.reset_to(socket, DukaApp.Screens.ReceiptsScreen, %{}, transition: :pop)}
 
+      {:error, :paid} ->
+        {:noreply, Native.toast(socket, "It has been paid, so it can't be changed")}
+
       {:error, changeset} ->
         {:noreply, Mob.Socket.assign(socket, :errors, changeset_errors(changeset))}
     end
@@ -503,7 +515,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
   # photo details ride along from the draft receipt.
   def build_attrs(assigns) do
     date_result = Date.from_iso8601(String.trim(assigns.date))
-    amount_result = Receipts.parse_amount(assigns.amount)
+    amount_result = Transactions.parse_amount(assigns.amount)
 
     errors =
       %{}
@@ -564,15 +576,15 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
   defp update_receipt(socket, fun),
     do: Mob.Socket.assign(socket, :receipt, fun.(socket.assigns.receipt))
 
-  defp photo_source(%Receipt{source: "manual"}), do: "ocr"
-  defp photo_source(%Receipt{source: source}), do: source
+  defp photo_source(%Transaction{source: "manual"}), do: "ocr"
+  defp photo_source(%Transaction{source: source}), do: source
 
   # A QR code already on the draft wins: it was scanned on purpose.
   defp attach_qr(socket, qr) when is_binary(qr) and qr != "" do
     case socket.assigns.receipt do
-      %Receipt{qr_content: nil} = receipt ->
+      %Transaction{qr_content: nil} = receipt ->
         socket
-        |> Mob.Socket.assign(:receipt, Receipts.put_qr(receipt, qr))
+        |> Mob.Socket.assign(:receipt, Transactions.put_qr(receipt, qr))
         |> duplicate_check()
         |> lookup_kra()
 
@@ -585,7 +597,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
 
   # Only eTIMS and TIMS links lead to a page with the receipt on it, and
   # QrParser only sets verify_url for links on a KRA host.
-  defp lookup_kra(%{assigns: %{receipt: %Receipt{source: source, verify_url: url}}} = socket)
+  defp lookup_kra(%{assigns: %{receipt: %Transaction{source: source, verify_url: url}}} = socket)
        when source in ["etims", "tims"] and is_binary(url) do
     socket
     |> Mob.Socket.assign(:notice, "Getting this receipt's details from KRA…")
@@ -596,13 +608,13 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
 
   # Warns (the unique index will refuse the save anyway) when this QR code
   # is already on another saved receipt.
-  defp duplicate_check(%{assigns: %{receipt: %Receipt{qr_content: nil}}} = socket), do: socket
+  defp duplicate_check(%{assigns: %{receipt: %Transaction{qr_content: nil}}} = socket), do: socket
 
   defp duplicate_check(socket) do
     %{profile: profile, receipt: receipt} = socket.assigns
 
-    case Receipts.find_by_qr(profile, receipt.qr_content) do
-      %Receipt{id: id} = existing when id != receipt.id ->
+    case Transactions.find_by_qr(profile, receipt.qr_content) do
+      %Transaction{id: id} = existing when id != receipt.id ->
         Mob.Socket.assign(socket, :errors, %{
           base:
             "You already saved this receipt (#{existing.vendor}, " <>
@@ -625,7 +637,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
       date: date && Date.to_iso8601(date),
       vendor: fields[:vendor],
       description: fields[:description],
-      amount: cents && Receipts.amount_input(cents)
+      amount: cents && Transactions.amount_input(cents)
     ]
 
     skip = MapSet.union(socket.assigns.touched, protected)
@@ -689,11 +701,11 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
   defp humanize(field), do: field |> Atom.to_string() |> String.capitalize()
 
   defp title(:edit, _receipt), do: "Edit receipt"
-  defp title(:new, %Receipt{source: "manual", photo_path: nil}), do: "New receipt"
+  defp title(:new, %Transaction{source: "manual", photo_path: nil}), do: "New receipt"
   defp title(:new, _receipt), do: "Confirm receipt"
 
-  defp qr_heading(%Receipt{source: "etims"}), do: "KRA eTIMS QR code"
-  defp qr_heading(%Receipt{source: "tims"}), do: "KRA TIMS (ETR) QR code"
-  defp qr_heading(%Receipt{source: "kra"}), do: "KRA link"
+  defp qr_heading(%Transaction{source: "etims"}), do: "KRA eTIMS QR code"
+  defp qr_heading(%Transaction{source: "tims"}), do: "KRA TIMS (ETR) QR code"
+  defp qr_heading(%Transaction{source: "kra"}), do: "KRA link"
   defp qr_heading(_receipt), do: "QR code (not a KRA receipt link)"
 end

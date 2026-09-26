@@ -15,11 +15,11 @@ defmodule DukaApp.Components.KraBadge do
 
   import Mob.Sigil
 
-  alias DukaApp.Receipts
+  alias DukaApp.Transactions
 
-  @spec badge(DukaApp.Receipts.Receipt.t()) :: map() | []
+  @spec badge(DukaApp.Transactions.Transaction.t()) :: map() | []
   def badge(receipt) do
-    if Receipts.kra?(receipt), do: tags(Receipts.verified?(receipt)), else: []
+    if Transactions.kra?(receipt), do: tags(Transactions.verified?(receipt)), else: []
   end
 
   defp tags(verified?) do

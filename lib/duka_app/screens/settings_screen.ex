@@ -6,7 +6,7 @@ defmodule DukaApp.Screens.SettingsScreen do
 
   use Mob.Screen
 
-  alias DukaApp.{Accounts, Appearance, Receipts}
+  alias DukaApp.{Accounts, Appearance, Transactions}
   alias DukaApp.Accounts.Profile
   alias DukaApp.Components.{ActionButton, FormField}
 
@@ -17,7 +17,7 @@ defmodule DukaApp.Screens.SettingsScreen do
     {:ok,
      socket
      |> Mob.Socket.assign(:profile, profile)
-     |> Mob.Socket.assign(:summary, Receipts.summary(profile))
+     |> Mob.Socket.assign(:summary, Transactions.summary(profile))
      |> Mob.Socket.assign(:name, profile.name || "")
      |> Mob.Socket.assign(:email, profile.email || "")
      |> Mob.Socket.assign(:kra_pin, profile.kra_pin || "")
@@ -180,13 +180,14 @@ defmodule DukaApp.Screens.SettingsScreen do
   defp abilities(profile) do
     case Enum.filter(
            [
-             {profile.can_approve_receipts, "approve receipts"},
-             {profile.can_approve_requests, "approve requests"},
-             {profile.can_mark_paid, "mark requests paid"}
+             {profile.can_approve, "approve transactions"},
+             {profile.can_mark_paid, "mark refunds and payments paid"},
+             {profile.can_list_all, "see the whole team's transactions"},
+             {profile.can_export, "export them"}
            ],
            &elem(&1, 0)
          ) do
-      [] -> "Your receipts and requests go to your team for approval."
+      [] -> "Your transactions go to your team for approval."
       can -> "You can " <> Enum.map_join(can, ", ", &elem(&1, 1)) <> "."
     end
   end
@@ -384,6 +385,6 @@ defmodule DukaApp.Screens.SettingsScreen do
   def handle_info(_message, socket), do: {:noreply, socket}
 
   defp stats(%{count: count, total: total}) do
-    "#{count} receipts saved · #{Receipts.format_amount(total)} in total"
+    "#{count} transactions saved · #{Transactions.format_amount(total)} in total"
   end
 end

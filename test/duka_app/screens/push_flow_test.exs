@@ -3,11 +3,11 @@ defmodule DukaApp.Screens.PushFlowTest do
   # comes back, and the synced mark on each item.
   use Mob.ScreenCase, async: false
 
-  alias DukaApp.{Accounts, FakeServer, Push, Receipts, Repo}
+  alias DukaApp.{Accounts, FakeServer, Push, Repo, Transactions}
   alias DukaApp.Components.SyncBadge
   alias DukaApp.Screens.{ApprovalsScreen, ReceiptsScreen, SettingsScreen}
 
-  @manager %{"approve_receipts" => true, "approve_requests" => true}
+  @manager %{"approve" => true, "mark_paid" => true}
 
   setup tags do
     DukaApp.DataCase.setup_sandbox(tags)
@@ -85,9 +85,9 @@ defmodule DukaApp.Screens.PushFlowTest do
     drain_native()
 
     push = %{
-      title: "Receipt approved",
+      title: "Your expense was approved",
       body: "Naivas · KES 2,450",
-      data: %{screen: "receipts"},
+      data: %{screen: "transactions"},
       source: :push
     }
 
@@ -95,7 +95,7 @@ defmodule DukaApp.Screens.PushFlowTest do
     view = put_in(view.socket.assigns.resumed_at, System.monotonic_time(:millisecond) - 60_000)
     view = render_info(view, {:notification, push})
     assert_received {:native, :sync, []}
-    assert_received {:native, :toast, ["Receipt approved: Naivas · KES 2,450"]}
+    assert_received {:native, :toast, ["Your expense was approved: Naivas · KES 2,450"]}
     assert nav_action(view) == nil
 
     # Just after coming to the front: the person tapped it.
@@ -137,16 +137,16 @@ defmodule DukaApp.Screens.PushFlowTest do
     connect(@manager)
 
     FakeServer.stub(fn
-      {:get, "/api/approvals/" <> kind, _} -> {200, %{kind => []}}
+      {:get, "/api/approvals", _} -> {200, %{"transactions" => []}}
       _ -> {200, %{}}
     end)
 
     approvals = mount_screen(ApprovalsScreen)
     assert Process.whereis(ApprovalsScreen) == self()
-    assert_received {:http, :get, "/api/approvals/receipts", _}
+    assert_received {:http, :get, "/api/approvals", _}
 
     render_info(approvals, :server_changed)
-    assert_received {:http, :get, "/api/approvals/receipts", _}
+    assert_received {:http, :get, "/api/approvals", _}
   end
 
   test "disconnecting tells the server to stop pushing to this phone" do
@@ -168,7 +168,7 @@ defmodule DukaApp.Screens.PushFlowTest do
     profile = connect()
 
     {:ok, receipt} =
-      Receipts.create_receipt(profile, %Receipts.Receipt{}, %{
+      Transactions.create_transaction(profile, Transactions.new_expense(), %{
         date: ~D[2026-09-20],
         vendor: "Naivas",
         amount_cents: 245_000,

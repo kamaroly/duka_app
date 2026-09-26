@@ -1,7 +1,7 @@
-defmodule DukaApp.Requests.AttachmentsTest do
+defmodule DukaApp.Transactions.AttachmentsTest do
   use ExUnit.Case, async: true
 
-  alias DukaApp.Requests.{Attachment, Attachments}
+  alias DukaApp.Transactions.{Attachment, Attachments}
 
   doctest Attachments
 

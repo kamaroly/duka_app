@@ -1,15 +1,16 @@
-defmodule DukaApp.Requests.Attachments do
+defmodule DukaApp.Transactions.Attachments do
   @moduledoc """
-  Files attached to payment requests, kept in `request_attachments/` in the
-  app's data directory (see `DukaApp.DataDir`).
+  Files attached to transactions, kept in `request_attachments/` in the
+  app's data directory (see `DukaApp.DataDir`) — the folder is named for
+  when only payment requests had attachments, and files already there stay.
 
   A file is copied in as soon as the user adds it, so it stays readable
   after the camera or file picker cleans up its temporary copy. If the
-  request is never sent, the form deletes what it copied.
+  transaction is never saved, the form deletes what it copied.
   """
 
   alias DukaApp.DataDir
-  alias DukaApp.Requests.Attachment
+  alias DukaApp.Transactions.Attachment
 
   @dir "request_attachments"
 
@@ -54,10 +55,10 @@ defmodule DukaApp.Requests.Attachments do
   @doc """
   The MIME type for a file the picker or camera didn't label, from its name.
 
-      iex> DukaApp.Requests.Attachments.content_type("Invoice.PDF")
+      iex> DukaApp.Transactions.Attachments.content_type("Invoice.PDF")
       "application/pdf"
 
-      iex> DukaApp.Requests.Attachments.content_type("notes.txt")
+      iex> DukaApp.Transactions.Attachments.content_type("notes.txt")
       nil
   """
   @spec content_type(String.t()) :: String.t() | nil
@@ -75,10 +76,10 @@ defmodule DukaApp.Requests.Attachments do
   @doc """
   A file size for people.
 
-      iex> DukaApp.Requests.Attachments.format_size(2_400_000)
+      iex> DukaApp.Transactions.Attachments.format_size(2_400_000)
       "2.3 MB"
 
-      iex> DukaApp.Requests.Attachments.format_size(52_000)
+      iex> DukaApp.Transactions.Attachments.format_size(52_000)
       "50 KB"
   """
   @spec format_size(non_neg_integer()) :: String.t()

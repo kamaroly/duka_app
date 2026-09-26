@@ -16,7 +16,7 @@ defmodule DukaApp.Receipts.KraReceipt do
   Parsing is separate from fetching so it can be tested against saved pages.
   """
 
-  alias DukaApp.Receipts
+  alias DukaApp.Transactions
 
   @type details :: %{
           vendor: String.t() | nil,
@@ -144,7 +144,7 @@ defmodule DukaApp.Receipts.KraReceipt do
   defp parse_amount(nil), do: nil
 
   defp parse_amount(text) do
-    case Receipts.parse_amount(text) do
+    case Transactions.parse_amount(text) do
       {:ok, cents} when cents > 0 -> cents
       _ -> nil
     end

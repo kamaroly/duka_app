@@ -45,7 +45,7 @@ defmodule DukaApp.Receipts.OcrParser do
 
   @spec parse(String.t(), keyword()) :: result()
   def parse(text, opts \\ []) when is_binary(text) do
-    today = Keyword.get(opts, :today, DukaApp.Receipts.today())
+    today = Keyword.get(opts, :today, DukaApp.Transactions.today())
 
     lines =
       text

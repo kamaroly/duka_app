@@ -1,7 +1,8 @@
 defmodule DukaApp.Sync.Deletion do
   @moduledoc """
-  A receipt deleted or a request withdrawn on the phone, waiting for the
-  next sync to tell the server. Until then, the pull doesn't bring it back.
+  A transaction deleted on the phone, waiting for the next sync to tell the
+  server. Until then, the pull doesn't bring it back. `kind` is always
+  "transaction" now; older rows said "receipt" or "request".
   """
 
   use Ecto.Schema

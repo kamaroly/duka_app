@@ -16,8 +16,8 @@ defmodule DukaApp.Api do
   """
 
   alias DukaApp.Accounts.Profile
-  alias DukaApp.Receipts.{Photos, Receipt}
-  alias DukaApp.Requests.{Attachments, Request}
+  alias DukaApp.Receipts.Photos
+  alias DukaApp.Transactions.{Attachments, Transaction}
 
   @server_key :server_url
 
@@ -74,112 +74,94 @@ defmodule DukaApp.Api do
   def forget_device(profile, token),
     do: call(:delete, "/api/devices/#{URI.encode_www_form(token)}", profile) |> ok_body()
 
-  # ── The person's own receipts and requests ────────────────────────────────
+  # ── The person's own transactions ─────────────────────────────────────────
+
+  # Sent as they are; nil is left out.
+  @fields [
+    :type,
+    :pay_to,
+    :date,
+    :vendor,
+    :amount_cents,
+    :category,
+    :source,
+    :qr_content,
+    :seller_pin,
+    :branch_id,
+    :invoice_number,
+    :verify_url,
+    :verified_at,
+    :ocr_text
+  ]
+
+  # Sent even when blank, so clearing one here clears it on the server too
+  # (a refund taken back no longer names a phone to pay).
+  @clearable [:description, :method, :phone, :till_number, :paybill_number, :account_number]
 
   @doc """
-  Sends a receipt, keyed by its `client_id` so a resend updates it. The
-  photo goes along until the server has it (`photo_pushed`).
+  Sends a transaction, keyed by its `client_id` so a resend updates it. The
+  photo goes along until the server has it (`photo_pushed`), and so do the
+  attachments it hasn't got yet (no `remote_id`); the server skips one it
+  already has.
   """
-  def put_receipt(%Profile{} = profile, %Receipt{} = receipt) do
+  def put_transaction(%Profile{} = profile, %Transaction{} = transaction) do
     fields =
-      receipt
-      |> Map.take([
-        :date,
-        :vendor,
-        :description,
-        :amount_cents,
-        :category,
-        :source,
-        :qr_content,
-        :seller_pin,
-        :branch_id,
-        :invoice_number,
-        :verify_url,
-        :verified_at,
-        :ocr_text
-      ])
-      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-      |> Enum.map(fn {key, value} -> {Atom.to_string(key), field_value(value)} end)
+      Enum.flat_map(@fields, fn key ->
+        case Map.fetch!(transaction, key) do
+          nil -> []
+          value -> [{Atom.to_string(key), field_value(value)}]
+        end
+      end) ++
+        Enum.map(@clearable, fn key ->
+          {Atom.to_string(key), field_value(Map.fetch!(transaction, key) || "")}
+        end)
 
     photo =
-      with false <- receipt.photo_pushed,
-           path when is_binary(path) <- Photos.path(receipt.photo_path),
+      with false <- transaction.photo_pushed,
+           path when is_binary(path) <- Photos.path(transaction.photo_path),
            true <- File.regular?(path) do
         [{"photo", {:file, path, Path.basename(path), "image/jpeg"}}]
       else
         _ -> []
       end
 
-    call(
-      :put,
-      "/api/receipts/#{URI.encode(receipt.client_id)}",
-      profile,
-      {:multipart, fields ++ photo}
-    )
-    |> ok_body()
-  end
-
-  @doc "Sends a new request with its attachments; a refund names its receipt by client_id."
-  def create_request(%Profile{} = profile, %Request{} = request, receipt_client_id) do
-    fields =
-      request
-      |> Map.take([
-        :client_id,
-        :kind,
-        :amount_cents,
-        :purpose,
-        :method,
-        :phone,
-        :till_number,
-        :paybill_number,
-        :account_number,
-        :payee_name
-      ])
-      |> Map.put(:receipt_client_id, receipt_client_id)
-      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-      |> Enum.map(fn {key, value} -> {Atom.to_string(key), field_value(value)} end)
-
     files =
-      for attachment <- request.attachments,
+      for attachment <- transaction.attachments,
+          is_nil(attachment.remote_id),
           path = Attachments.path(attachment.file_name),
           File.regular?(path) do
         {"attachments[]", {:file, path, attachment.name, attachment.content_type}}
       end
 
-    call(:post, "/api/requests", profile, {:multipart, fields ++ files}) |> ok_body()
+    call(
+      :put,
+      "/api/transactions/#{URI.encode(transaction.client_id)}",
+      profile,
+      {:multipart, fields ++ photo ++ files}
+    )
+    |> ok_body()
   end
 
-  @doc "Deletes a receipt deleted on the phone. The server keeps one already decided."
-  def delete_receipt(%Profile{} = profile, client_id),
-    do: call(:delete, "/api/receipts/#{URI.encode(client_id)}", profile) |> deleted()
-
-  @doc "Withdraws a request withdrawn on the phone. The server keeps one already decided."
-  def delete_request(%Profile{} = profile, client_id),
-    do: call(:delete, "/api/requests/#{URI.encode(client_id)}", profile) |> deleted()
+  @doc "Deletes a transaction deleted on the phone. The server keeps one already decided."
+  def delete_transaction(%Profile{} = profile, client_id),
+    do: call(:delete, "/api/transactions/#{URI.encode(client_id)}", profile) |> deleted()
 
   # The server answers 204 even for one it never had, so a 404 means a
   # server without deletes yet.
   defp deleted({:ok, 404, _body}), do: {:error, :not_supported}
   defp deleted(response), do: ok_body(response)
 
-  def list_receipts(profile), do: call(:get, "/api/receipts", profile) |> ok_body()
-  def list_requests(profile), do: call(:get, "/api/requests", profile) |> ok_body()
+  def list_transactions(profile), do: call(:get, "/api/transactions", profile) |> ok_body()
 
-  # ── Manager ────────────────────────────────────────────────────────────────
+  # ── Approvers ──────────────────────────────────────────────────────────────
 
-  def approval_receipts(profile), do: call(:get, "/api/approvals/receipts", profile) |> ok_body()
-  def approval_requests(profile), do: call(:get, "/api/approvals/requests", profile) |> ok_body()
-
-  @doc ~s(`decision` is "approve" or "reject" \(with a note\).)
-  def decide_receipt(profile, id, decision, note),
-    do:
-      call(:post, "/api/approvals/receipts/#{id}/#{decision}", profile, {:json, %{note: note}})
-      |> ok_body()
+  @doc "What waits for a decision, and approved claims waiting to be paid."
+  def approvals(profile), do: call(:get, "/api/approvals", profile) |> ok_body()
 
   @doc ~s(`decision` is "approve", "reject" \(with a note\) or "pay".)
-  def decide_request(profile, id, decision, note),
+  def decide(profile, id, decision, note),
     do:
-      call(:post, "/api/approvals/requests/#{id}/#{decision}", profile, {:json, %{note: note}})
+      call(:post, "/api/approvals/#{id}/#{decision}", profile, {:json, %{note: note}})
       |> ok_body()
 
   @doc "Downloads a receipt photo or attachment (`path` like /api/attachments/ID) to `dest`."

@@ -1,27 +1,28 @@
-defmodule DukaApp.Requests.Attachment do
+defmodule DukaApp.Transactions.Attachment do
   @moduledoc """
-  A file supporting a payment request: an invoice, a quotation, a photo of
-  the goods. Images and PDFs only.
+  A file supporting a transaction: an invoice, a quotation, a photo of the
+  goods. Images and PDFs only. (The receipt photo itself is the
+  transaction's `photo_path`.)
 
   The file itself lives in the app's data directory (see `Attachments`);
   this row records its stored name, the name the user knows it by, its type
-  and size. One pulled from the server has its `remote_id` and no file until
-  it's opened.
+  and size. `remote_id` is its id on the server once it's there; one pulled
+  from the server has no file until it's opened.
   """
 
   use Ecto.Schema
 
   @type t :: %__MODULE__{}
 
-  schema "request_attachments" do
+  schema "transaction_attachments" do
     field :file_name, :string
     field :name, :string
     field :content_type, :string
     field :size, :integer
-    # Set when it came from the server; the file downloads when first opened.
+    # Its id on the server once sent, or when it came from there.
     field :remote_id, :string
 
-    belongs_to :request, DukaApp.Requests.Request
+    belongs_to :transaction, DukaApp.Transactions.Transaction
 
     timestamps()
   end

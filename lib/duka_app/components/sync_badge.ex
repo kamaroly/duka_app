@@ -1,6 +1,6 @@
 defmodule DukaApp.Components.SyncBadge do
   @moduledoc """
-  Whether a receipt or request on this phone has reached the team's server:
+  Whether a transaction on this phone has reached the team's server:
   a cloud with a tick once it has, a cloud with an arrow while it waits for
   the next sync. A receipt book that isn't connected shows neither, since
   nothing there is ever sent.
@@ -11,18 +11,17 @@ defmodule DukaApp.Components.SyncBadge do
 
   import Mob.Sigil
 
-  alias DukaApp.Receipts.Receipt
-  alias DukaApp.Requests.Request
+  alias DukaApp.Transactions.Transaction
 
   @doc """
-  True once the server has the record as it is now: a receipt edited since
+  True once the server has the transaction as it is now: one edited since
   it was sent isn't synced until it is sent again.
   """
-  @spec synced?(Receipt.t() | Request.t()) :: boolean()
-  def synced?(%Receipt{remote_id: id, needs_push: needs_push}), do: id != nil and not needs_push
-  def synced?(%Request{remote_id: id}), do: id != nil
+  @spec synced?(Transaction.t()) :: boolean()
+  def synced?(%Transaction{remote_id: id, needs_push: needs_push}),
+    do: id != nil and not needs_push
 
-  @spec badge(Receipt.t() | Request.t(), boolean()) :: map() | []
+  @spec badge(Transaction.t(), boolean()) :: map() | []
   def badge(_record, false = _connected), do: []
 
   def badge(record, true = _connected) do

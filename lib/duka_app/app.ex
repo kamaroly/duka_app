@@ -18,8 +18,8 @@ defmodule DukaApp.App do
     DukaApp.Components.register_all()
     Mob.Composite.register(:header, {DukaApp.Components.Header, :expand})
     Mob.Composite.register(:search_field, {DukaApp.Components.SearchField, :expand})
-    Mob.Composite.register(:receipt_item, {DukaApp.Components.ReceiptItem, :expand})
-    Mob.Composite.register(:receipt_detail, {DukaApp.Components.ReceiptDetailSheet, :expand})
+    Mob.Composite.register(:transaction_item, {DukaApp.Components.TransactionItem, :expand})
+    Mob.Composite.register(:transaction_sheet, {DukaApp.Components.TransactionSheet, :expand})
 
     # Configure BEAM's DNS path so Req / Finch / Mint / `gen_tcp:connect/3`
     # with a hostname work on iOS without per-host setup. Flips the lookup

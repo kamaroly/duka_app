@@ -21,11 +21,13 @@ defmodule DukaApp.Accounts.Profile do
     field :api_token, :string, redact: true
     field :remote_user_id, :string
     field :team, :string
-    field :can_approve_receipts, :boolean, default: false
-    field :can_approve_requests, :boolean, default: false
+    # What the server says this person may do in their team (see /api/me).
+    field :can_approve, :boolean, default: false
     field :can_mark_paid, :boolean, default: false
+    field :can_list_all, :boolean, default: false
+    field :can_export, :boolean, default: false
 
-    has_many :receipts, DukaApp.Receipts.Receipt
+    has_many :transactions, DukaApp.Transactions.Transaction
 
     timestamps()
   end
@@ -60,9 +62,10 @@ defmodule DukaApp.Accounts.Profile do
       :remote_user_id,
       :team,
       :name,
-      :can_approve_receipts,
-      :can_approve_requests,
-      :can_mark_paid
+      :can_approve,
+      :can_mark_paid,
+      :can_list_all,
+      :can_export
     ])
   end
 
@@ -70,10 +73,10 @@ defmodule DukaApp.Accounts.Profile do
   def connected?(%__MODULE__{api_token: token}) when is_binary(token), do: true
   def connected?(_profile), do: false
 
-  @doc "A manager is anyone the server lets approve something."
+  @doc "A manager is anyone the server lets approve, or pay out, transactions."
   @spec manager?(t() | nil) :: boolean()
   def manager?(%__MODULE__{} = profile),
-    do: connected?(profile) and (profile.can_approve_receipts or profile.can_approve_requests)
+    do: connected?(profile) and (profile.can_approve or profile.can_mark_paid)
 
   def manager?(_profile), do: false
 

@@ -4,13 +4,13 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
   # share global state.
   use Mob.ScreenCase, async: false
 
-  alias DukaApp.{Accounts, Appearance, Receipts}
+  alias DukaApp.{Accounts, Appearance, Transactions}
   alias DukaApp.Screens.{PhoneScreen, ReceiptFormScreen, ReceiptsScreen, SettingsScreen}
   alias DukaApp.Theme.{Dark, Light}
 
   @etims "https://etims.kra.go.ke/common/link/etims/receipt/indexEtimsReceiptData?Data=P051300254O695LJT35ZUB2SHJ7N7"
   # :icon renders on both platforms but is missing from mob's priv/tags lists.
-  @extra [:header, :search_field, :receipt_item, :receipt_detail, :icon]
+  @extra [:header, :search_field, :transaction_item, :transaction_sheet, :icon]
 
   # navigated_to/1 only returns the module; these tests also check params.
   defp nav_action(view), do: view.socket.__mob__[:nav_action]
@@ -35,9 +35,10 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
       "name" => "Wanjiku",
       "team" => "acme",
       "permissions" => %{
-        "approve_receipts" => true,
-        "approve_requests" => false,
-        "mark_requests_paid" => false
+        "approve" => true,
+        "mark_paid" => false,
+        "list_all" => false,
+        "export" => false
       }
     }
 
@@ -73,8 +74,8 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
                api_token: "tok-1",
                team: "acme",
                name: "Wanjiku",
-               can_approve_receipts: true,
-               can_approve_requests: false
+               can_approve: true,
+               can_mark_paid: false
              } = Accounts.current_profile()
     end
 
@@ -146,7 +147,7 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
 
     test "every screen renders", %{profile: profile} do
       {:ok, receipt} =
-        Receipts.create_receipt(profile, Receipts.new_from_qr(@etims), %{
+        Transactions.create_transaction(profile, Transactions.new_from_qr(@etims), %{
           date: ~D[2026-09-20],
           vendor: "Naivas",
           amount_cents: 1_000,
@@ -172,8 +173,8 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
     test "the filter chips narrow the list", %{profile: profile} do
       for {vendor, category} <- [{"Naivas", "Food & Groceries"}, {"Shell", "Fuel"}] do
         {:ok, _} =
-          Receipts.create_receipt(profile, Receipts.new_manual(), %{
-            date: Receipts.today(),
+          Transactions.create_transaction(profile, Transactions.new_expense(), %{
+            date: Transactions.today(),
             vendor: vendor,
             amount_cents: 1_000,
             category: category
@@ -181,15 +182,15 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
       end
 
       view = ReceiptsScreen |> mount_screen() |> render_info({:tap, {:group, :fuel}})
-      assert Enum.map(assigns(view).receipts, & &1.vendor) == ["Shell"]
+      assert Enum.map(assigns(view).items, & &1.vendor) == ["Shell"]
       assert_renderable(view, extra: @extra)
 
       view = render_info(view, {:tap, {:group, :other}})
-      assert assigns(view).receipts == []
-      assert text(view) =~ "No other receipts yet."
+      assert assigns(view).items == []
+      assert text(view) =~ "No other expenses yet."
 
       view = render_info(view, {:tap, {:group, :all}})
-      assert [_, _] = assigns(view).receipts
+      assert [_, _] = assigns(view).items
     end
 
     test "the search button shows the search box and closing it clears the search", %{
@@ -197,8 +198,8 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
     } do
       for vendor <- ["Naivas", "Shell"] do
         {:ok, _} =
-          Receipts.create_receipt(profile, Receipts.new_manual(), %{
-            date: Receipts.today(),
+          Transactions.create_transaction(profile, Transactions.new_expense(), %{
+            date: Transactions.today(),
             vendor: vendor,
             amount_cents: 1_000,
             category: "Other"
@@ -218,21 +219,21 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
       assert_renderable(view, extra: @extra)
 
       view = render_info(view, {:change, :search, "shell"})
-      assert Enum.map(assigns(view).receipts, & &1.vendor) == ["Shell"]
+      assert Enum.map(assigns(view).items, & &1.vendor) == ["Shell"]
 
       view = render_info(view, {:tap, :toggle_search})
       assert %{searching: false, query: ""} = assigns(view)
       assert text(view) =~ "Spent this month"
       assert text(view) =~ "Scan receipt"
-      assert [_, _] = assigns(view).receipts
+      assert [_, _] = assigns(view).items
     end
 
     test "the month pill picks which month the card totals", %{profile: profile} do
-      [this_month, last_month | _] = Receipts.recent_months(12)
+      [this_month, last_month | _] = Transactions.recent_months(12)
 
-      for {date, cents} <- [{Receipts.today(), 1_000}, {Date.add(last_month, 3), 7_000}] do
+      for {date, cents} <- [{Transactions.today(), 1_000}, {Date.add(last_month, 3), 7_000}] do
         {:ok, _} =
-          Receipts.create_receipt(profile, Receipts.new_manual(), %{
+          Transactions.create_transaction(profile, Transactions.new_expense(), %{
             date: date,
             vendor: "Shop",
             amount_cents: cents,
@@ -266,7 +267,7 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
 
     test "scanning a saved receipt opens it instead of a duplicate form", %{profile: profile} do
       {:ok, receipt} =
-        Receipts.create_receipt(profile, Receipts.new_from_qr(@etims), %{
+        Transactions.create_transaction(profile, Transactions.new_from_qr(@etims), %{
           date: ~D[2026-09-20],
           vendor: "Naivas",
           amount_cents: 1_000,
@@ -296,7 +297,7 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
 
       assert {:reset, ReceiptsScreen, %{}, :pop} = nav_action(view)
 
-      assert [receipt] = Receipts.list_receipts(profile)
+      assert [receipt] = Transactions.list_transactions(profile)
       assert receipt.date == ~D[2026-09-21]
       assert receipt.vendor == "Carrefour Junction"
       assert receipt.description == "Office snacks"
@@ -315,7 +316,7 @@ defmodule DukaApp.Screens.ReceiptFlowTest do
         |> render_info({:tap, :save})
 
       assert %{date: _, amount: _} = assigns(view).errors
-      assert Receipts.list_receipts(profile) == []
+      assert Transactions.list_transactions(profile) == []
     end
 
     test "every text input has a visible label" do

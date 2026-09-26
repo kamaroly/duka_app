@@ -1,13 +1,13 @@
 defmodule DukaApp.Screens.ReceiptsScreen do
   @moduledoc """
-  Home screen: this month's spend, the receipts and the refund and payment
-  requests in one list, and the ways to add either.
+  Home screen: this month's spend, every transaction — expenses, refunds and
+  payment requests — in one list, and the ways to add them.
 
   A receipt book connected to a team syncs with the server when this screen
   opens, after a request is sent, when the app comes back to the foreground
   or back online, and when the server pushes a notification (see
-  `DukaApp.Sync` and `DukaApp.Push`). Each receipt and request shows whether
-  the server has it yet. One that isn't connected gets a short warning that
+  `DukaApp.Sync` and `DukaApp.Push`). Each transaction shows whether the
+  server has it yet. One that isn't connected gets a short warning that
   opens Settings to connect.
 
   This screen stays alive under the others, so it is the one that registers
@@ -15,16 +15,16 @@ defmodule DukaApp.Screens.ReceiptsScreen do
 
   "Scan receipt" takes a photo and hands it to the confirm form, which saves
   it and reads the details off it. "Scan QR only" opens the QR scanner; a code
-  that was already saved opens the saved receipt instead of a duplicate.
+  that was already saved opens the saved transaction instead of a duplicate.
+  An expense opened from the list can be claimed back as a refund.
   """
 
   use Mob.Screen
 
-  alias DukaApp.{Accounts, Api, Native, Push, Receipts, Sync, Theme}
-  alias DukaApp.Components.{ActionButton, Header, ReceiptItem, RequestItem}
-  alias DukaApp.Receipts.{Photos, Receipt}
-  alias DukaApp.Requests
-  alias DukaApp.Requests.{Attachment, Attachments, Request}
+  alias DukaApp.{Accounts, Api, Native, Push, Sync, Theme, Transactions}
+  alias DukaApp.Components.{ActionButton, Header, TransactionItem}
+  alias DukaApp.Receipts.Photos
+  alias DukaApp.Transactions.{Attachment, Attachments, Transaction}
 
   alias DukaApp.Accounts.Profile
 
@@ -56,11 +56,8 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       |> Mob.Socket.assign(:verifying, %{})
       |> Mob.Socket.assign(:tried, MapSet.new())
       |> Mob.Socket.assign(:viewing_photo, false)
-      |> Mob.Socket.assign(:month, Date.beginning_of_month(Receipts.today()))
+      |> Mob.Socket.assign(:month, Date.beginning_of_month(Transactions.today()))
       |> Mob.Socket.assign(:selected, nil)
-      # The refund already asked for the open receipt, if any.
-      |> Mob.Socket.assign(:selected_refund, nil)
-      |> Mob.Socket.assign(:selected_request, nil)
       |> Mob.Socket.assign(:syncing, false)
       |> Mob.Socket.assign(:pending_camera, nil)
       # When the app last came to the front: a push that arrives just after
@@ -151,7 +148,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     ~MOB"""
     <Column background={:background} fill_height={true}>
       <Header
-        kicker={Calendar.strftime(Receipts.today(), "%A, %d %b")}
+        kicker={Calendar.strftime(Transactions.today(), "%A, %d %b")}
         title={greeting(@profile)}
         actions={header_actions(@searching, @profile)}
       />
@@ -197,8 +194,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       />
       <Spacer :if={@items == []} weight={1} />
       {if not @searching, do: dock()}
-      <ReceiptDetail :if={@selected} receipt={@selected} refund={@selected_refund} />
-      {RequestItem.sheet(@selected_request)}
+      <TransactionSheet :if={@selected} transaction={@selected} />
     </Column>
     """
   end
@@ -214,7 +210,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     [search_action(searching)] ++ approvals ++ [{"settings", "Settings", :open_settings}]
   end
 
-  defp search_action(false), do: {"search", "Search receipts", :toggle_search}
+  defp search_action(false), do: {"search", "Search transactions", :toggle_search}
   defp search_action(true), do: {"close", "Close search", :toggle_search}
 
   # The dark card: the chosen month's spend, split three ways. The month pill
@@ -254,7 +250,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
         </Row>
         <Spacer size={10} />
         <Text
-          text={Receipts.format_short(summary.month_total)}
+          text={Transactions.format_short(summary.month_total)}
           text_size={36}
           font_weight="bold"
           letter_spacing={-1.8}
@@ -262,7 +258,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
         />
         <Spacer size={14} />
         <Row fill_width={true}>
-          {Receipts.groups()
+          {Transactions.groups()
            |> Enum.map(&split_cell(&1, summary.month_by_group[&1]))
            |> Enum.intersperse(~MOB(<Spacer size={8} />))}
         </Row>
@@ -279,7 +275,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
           <Box width={7} height={7} corner_radius={4} background={Theme.color(group)} />
           <Spacer size={5} />
           <Text
-            text={Receipts.group_label(group)}
+            text={Transactions.group_label(group)}
             text_size={11}
             text_color={Theme.color(:spend_muted)}
           />
@@ -296,12 +292,13 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     """
   end
 
-  # All / Food / Fuel / Other filter pills. The strip scrolls sideways in case
-  # a large font size pushes the last pill off screen.
+  # All / Food / Fuel / Other / Refunds & payments filter pills. The strip
+  # scrolls sideways in case a large font size pushes the last pill off screen.
   defp chips(active, count) do
+    groups = Enum.map(Transactions.groups(), &{&1, Transactions.group_label(&1)})
+
     pills =
-      ([{:all, "All · #{count}"} | Enum.map(Receipts.groups(), &{&1, Receipts.group_label(&1)})] ++
-         [{:requests, "Requests"}])
+      ([{:all, "All · #{count}"} | groups] ++ [{:claims, "Refunds & payments"}])
       |> Enum.map(fn {group, label} -> chip(group, label, group == active) end)
       |> Enum.intersperse(~MOB(<Spacer size={8} />))
 
@@ -458,7 +455,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   def handle_info({:scan, :result, %{value: value}}, socket) when is_binary(value) do
     socket = Native.success(socket)
 
-    case Receipts.find_by_qr(socket.assigns.profile, value) do
+    case Transactions.find_by_qr(socket.assigns.profile, value) do
       nil ->
         {:noreply, Mob.Socket.push_screen(socket, ReceiptFormScreen, %{qr: value})}
 
@@ -480,17 +477,24 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   def handle_info({:select, :receipts, index}, socket), do: select(socket, index)
   def handle_info({:tap, {:list, :receipts, :select, index}}, socket), do: select(socket, index)
 
-  def handle_info({event, :close_receipt}, socket) when event in [:tap, :dismiss] do
+  def handle_info({event, :close_transaction}, socket) when event in [:tap, :dismiss] do
     {:noreply, Mob.Socket.assign(socket, selected: nil, viewing_photo: false)}
   end
 
-  def handle_info({:tap, :edit_receipt}, socket) do
-    %{id: id} = socket.assigns.selected
+  # A payment request is edited where it was made; anything else on the
+  # receipt form.
+  def handle_info({:tap, :edit_transaction}, socket) do
+    %{id: id, type: type} = socket.assigns.selected
+
+    {screen, params} =
+      if type == "payment_request",
+        do: {RequestFormScreen, %{id: id, notify: self()}},
+        else: {ReceiptFormScreen, %{id: id}}
 
     {:noreply,
      socket
      |> Mob.Socket.assign(:selected, nil)
-     |> Mob.Socket.push_screen(ReceiptFormScreen, %{id: id})}
+     |> Mob.Socket.push_screen(screen, params)}
   end
 
   # Checks the receipt against KRA's verification page in the app. Each
@@ -499,7 +503,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   def handle_info({:tap, :verify_receipt}, socket) do
     case socket.assigns.selected do
       %{} = receipt ->
-        if Receipts.verifiable?(receipt) do
+        if Transactions.verifiable?(receipt) do
           {:noreply, socket |> Native.toast("Checking with KRA…") |> start_verify(receipt, :tap)}
         else
           {:noreply, socket}
@@ -514,12 +518,12 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     {mode, socket} = finish_verify(socket, id)
 
     socket =
-      case Receipts.get_receipt(socket.assigns.profile, id) do
+      case Transactions.get_transaction(socket.assigns.profile, id) do
         nil ->
           socket
 
         receipt ->
-          {:ok, verified} = Receipts.mark_verified(receipt)
+          {:ok, verified} = Transactions.mark_verified(receipt)
 
           selected =
             case socket.assigns.selected do
@@ -561,10 +565,10 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     {:noreply, socket}
   end
 
-  def handle_info({:tap, :delete_receipt}, socket) do
+  def handle_info({:tap, :delete_transaction}, socket) do
     {:noreply,
      Mob.Alert.alert(socket,
-       title: "Delete this receipt?",
+       title: "Delete this transaction?",
        message: "It will be removed from this phone. This cannot be undone.",
        buttons: [
          [label: "Delete", style: :destructive, action: :confirm_delete],
@@ -578,22 +582,18 @@ defmodule DukaApp.Screens.ReceiptsScreen do
       nil ->
         {:noreply, socket}
 
-      receipt ->
-        case Receipts.delete_receipt(receipt) do
+      transaction ->
+        case Transactions.delete_transaction(transaction) do
           {:ok, _} ->
             {:noreply,
              socket
-             |> Native.toast("Receipt deleted")
+             |> Native.toast("Deleted")
              |> Mob.Socket.assign(:selected, nil)
              |> load_receipts()
              |> start_sync()}
 
           {:error, :decided} ->
-            {:noreply,
-             Native.toast(socket, "Your manager has decided on this receipt, so it stays")}
-
-          {:error, :has_request} ->
-            {:noreply, Native.toast(socket, "Withdraw its refund request first")}
+            {:noreply, Native.toast(socket, "It has been decided on, so it stays")}
         end
     end
   end
@@ -632,7 +632,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   def handle_info({:tap, :pick_month}, socket) do
     buttons =
       @months
-      |> Receipts.recent_months()
+      |> Transactions.recent_months()
       |> Enum.with_index()
       |> Enum.map(fn {month, i} -> [label: month_label(month, :long), action: :"month_#{i}"] end)
 
@@ -644,7 +644,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   end
 
   def handle_info({:alert, action}, socket) when is_map_key(@month_actions, action) do
-    month = Enum.at(Receipts.recent_months(@months), Map.fetch!(@month_actions, action))
+    month = Enum.at(Transactions.recent_months(@months), Map.fetch!(@month_actions, action))
 
     {:noreply,
      socket
@@ -663,14 +663,14 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     end
   end
 
-  # ── Adding, and requests ──────────────────────────────────────────────────
+  # ── Adding, and claims ────────────────────────────────────────────────────
 
   def handle_info({:tap, :add_menu}, socket) do
     {:noreply,
      Mob.Alert.action_sheet(socket,
        title: "Add",
        buttons: [
-         [label: "Add a receipt by hand", action: :add_manual],
+         [label: "Add an expense by hand", action: :add_manual],
          [label: "Request a payment", action: :new_payment],
          [label: "Cancel", style: :cancel]
        ]
@@ -684,40 +684,34 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   end
 
   # The form pops back here rather than remounting this screen.
-  def handle_info({:request_saved, _request}, socket) do
+  def handle_info({:request_saved, _transaction}, socket) do
     {:noreply, socket |> load_receipts() |> start_sync()}
   end
 
-  def handle_info({event, :close_request}, socket) when event in [:tap, :dismiss] do
-    {:noreply, Mob.Socket.assign(socket, :selected_request, nil)}
-  end
-
-  def handle_info({:tap, :cancel_request}, socket) do
+  def handle_info({:tap, :cancel_refund}, socket) do
     {:noreply,
      Mob.Alert.alert(socket,
-       title: "Withdraw this request?",
-       message: "Your manager won't see it any more.",
+       title: "Take back the refund request?",
+       message: "It stays as an expense, and nobody will pay it back.",
        buttons: [
-         [label: "Withdraw", style: :destructive, action: :confirm_cancel],
+         [label: "Take back", style: :destructive, action: :confirm_cancel_refund],
          [label: "Keep", style: :cancel]
        ]
      )}
   end
 
-  def handle_info({:alert, :confirm_cancel}, socket) do
-    case socket.assigns.selected_request &&
-           Requests.cancel_request(socket.assigns.selected_request) do
-      {:ok, _} ->
+  def handle_info({:alert, :confirm_cancel_refund}, socket) do
+    case socket.assigns.selected && Transactions.cancel_refund(socket.assigns.selected) do
+      {:ok, expense} ->
         {:noreply,
          socket
-         |> Native.toast("Request withdrawn")
-         |> Mob.Socket.assign(:selected_request, nil)
+         |> Native.toast("Refund request taken back")
+         |> Mob.Socket.assign(:selected, expense)
          |> load_receipts()
          |> start_sync()}
 
       {:error, :not_pending} ->
-        {:noreply,
-         Native.toast(socket, "Only a request still waiting for approval can be withdrawn")}
+        {:noreply, Native.toast(socket, "It has been decided on, so it stays")}
 
       nil ->
         {:noreply, socket}
@@ -726,7 +720,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
 
   # One that came from the server downloads first.
   def handle_info({:tap, {:open_attachment, id}}, socket) do
-    with %Request{attachments: attachments} <- socket.assigns.selected_request,
+    with %Transaction{attachments: attachments} <- socket.assigns.selected,
          %Attachment{} = attachment <- Enum.find(attachments, &(&1.id == id)) do
       path = Attachments.path(attachment.file_name)
 
@@ -821,15 +815,14 @@ defmodule DukaApp.Screens.ReceiptsScreen do
     end
   end
 
-  # The sheet closes on the way out; reopening the receipt looks the refund
-  # up again, so it shows the new one. The form reports back when it's saved.
+  # The sheet closes on the way out. The form reports back when it's saved.
   def handle_info({:tap, :request_refund}, socket) do
     %{id: id} = socket.assigns.selected
 
     {:noreply,
      socket
-     |> Mob.Socket.assign(selected: nil, selected_refund: nil)
-     |> Mob.Socket.push_screen(RequestFormScreen, %{receipt_id: id, notify: self()})}
+     |> Mob.Socket.assign(:selected, nil)
+     |> Mob.Socket.push_screen(RequestFormScreen, %{refund_of: id, notify: self()})}
   end
 
   def handle_info({:tap, :open_settings}, socket) do
@@ -849,7 +842,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   # A photo that came from the server downloads first.
   def handle_info({:tap, :view_photo}, socket) do
     case socket.assigns.selected do
-      %Receipt{photo_path: photo} = receipt when is_binary(photo) ->
+      %Transaction{photo_path: photo} = receipt when is_binary(photo) ->
         if Photos.exists?(photo) do
           {:noreply, Mob.Socket.assign(socket, :viewing_photo, true)}
         else
@@ -940,28 +933,19 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   defp verify_next(socket) do
     %{profile: profile, tried: tried} = socket.assigns
 
-    case Receipts.next_unverified(profile, tried) do
+    case Transactions.next_unverified(profile, tried) do
       nil -> socket
       receipt -> start_verify(socket, receipt, :background)
     end
   end
 
   defp select(socket, index) do
-    case Enum.at(socket.assigns.items, index) do
-      %Request{} = request ->
-        {:noreply, Mob.Socket.assign(socket, :selected_request, request)}
-
-      receipt ->
-        refund = receipt && Requests.open_refund(receipt)
-        {:noreply, Mob.Socket.assign(socket, selected: receipt, selected_refund: refund)}
-    end
+    {:noreply, Mob.Socket.assign(socket, :selected, Enum.at(socket.assigns.items, index))}
   end
 
-  # `sync` marks what has reached the server, in a connected receipt book.
-  defp list_item(%Request{} = request, sync), do: RequestItem.row(request, sync: sync)
-
-  defp list_item(%Receipt{} = receipt, sync),
-    do: ReceiptItem.expand(%{receipt: receipt, sync: sync}, [], %{})
+  # `sync` marks what has reached the server, in a connected book.
+  defp list_item(transaction, sync),
+    do: TransactionItem.expand(%{transaction: transaction, sync: sync}, [], %{})
 
   defp start_sync(%{assigns: %{profile: profile, syncing: false}} = socket) do
     if Profile.connected?(profile),
@@ -1046,61 +1030,30 @@ defmodule DukaApp.Screens.ReceiptsScreen do
 
   defp load_receipts(%{assigns: %{profile: nil}} = socket) do
     socket
-    |> Mob.Socket.assign(:receipts, [])
     |> Mob.Socket.assign(:items, [])
     |> Mob.Socket.assign(:summary, %{
       count: 0,
       total: 0,
       month_total: 0,
-      month_by_group: Map.new(Receipts.groups(), &{&1, 0})
+      month_by_group: Map.new(Transactions.groups(), &{&1, 0})
     })
   end
 
   defp load_receipts(socket) do
     %{profile: profile, query: query, group: group, month: month} = socket.assigns
-
-    receipts = if group == :requests, do: [], else: Receipts.list_receipts(profile, query, group)
-    requests = if group in [:all, :requests], do: matching_requests(profile, query), else: []
-
     sync = Profile.connected?(profile)
 
     socket
-    |> Mob.Socket.assign(:receipts, receipts)
-    |> Mob.Socket.assign(:items, newest_first(receipts, requests))
-    |> Mob.Socket.assign(:summary, Receipts.summary(profile, month))
+    |> Mob.Socket.assign(:items, Transactions.list_transactions(profile, query, group))
+    |> Mob.Socket.assign(:summary, Transactions.summary(profile, month))
     |> Mob.List.put_renderer(:receipts, &list_item(&1, sync))
   end
 
-  defp matching_requests(profile, query) do
-    requests = Requests.list_requests(profile)
-
-    case String.downcase(String.trim(query)) do
-      "" ->
-        requests
-
-      term ->
-        Enum.filter(requests, fn request ->
-          [RequestItem.headline(request), request.payee_name, request.purpose]
-          |> Enum.any?(&(is_binary(&1) and String.contains?(String.downcase(&1), term)))
-        end)
-    end
-  end
-
-  # Receipts by their date, requests by the day they were made.
-  defp newest_first(receipts, []), do: receipts
-
-  defp newest_first(receipts, requests) do
-    Enum.sort_by(receipts ++ requests, &{sort_date(&1), &1.inserted_at}, :desc)
-  end
-
-  defp sort_date(%Receipt{date: date}), do: date
-  defp sort_date(%Request{inserted_at: at}), do: NaiveDateTime.to_date(at)
-
   defp greeting(%{name: name}) when is_binary(name) and name != "", do: "Hi, #{name}"
-  defp greeting(_profile), do: "Your receipts"
+  defp greeting(_profile), do: "Your expenses"
 
   defp spent_label(month) do
-    if month == Date.beginning_of_month(Receipts.today()),
+    if month == Date.beginning_of_month(Transactions.today()),
       do: "Spent this month",
       else: "Spent in #{month_label(month, :long)}"
   end
@@ -1109,7 +1062,7 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   defp month_label(month, style \\ :short) do
     cond do
       style == :long -> Calendar.strftime(month, "%B %Y")
-      month.year == Receipts.today().year -> Calendar.strftime(month, "%B")
+      month.year == Transactions.today().year -> Calendar.strftime(month, "%B")
       true -> Calendar.strftime(month, "%b %Y")
     end
   end
@@ -1117,34 +1070,31 @@ defmodule DukaApp.Screens.ReceiptsScreen do
   # KRA vouches for the receipt; say so if its total differs from ours.
   defp verified_message(receipt, %{amount_cents: cents})
        when is_integer(cents) and cents != receipt.amount_cents,
-       do: "Verified with KRA — but KRA's total is #{Receipts.format_amount(cents)}"
+       do: "Verified with KRA — but KRA's total is #{Transactions.format_amount(cents)}"
 
   defp verified_message(_receipt, _details), do: "Verified with KRA"
 
-  defp list_title(:all), do: "Receipts and requests"
-  defp list_title(:requests), do: "Refunds and payments"
-  defp list_title(group), do: Receipts.group_label(group)
+  defp list_title(:all), do: "Transactions"
+  defp list_title(:claims), do: "Refunds and payments"
+  defp list_title(group), do: Transactions.group_label(group)
 
-  defp count_label(:requests, 1), do: "1 request"
-  defp count_label(:requests, count), do: "#{count} requests"
-  defp count_label(:all, 1), do: "1 item"
-  defp count_label(:all, count), do: "#{count} items"
-  defp count_label(_group, 1), do: "1 receipt"
-  defp count_label(_group, count), do: "#{count} receipts"
+  defp count_label(_filter, 1), do: "1 item"
+  defp count_label(_filter, count), do: "#{count} items"
 
   # "Ksh 1,205" without the currency, for the small split cells.
   defp bare_amount(cents),
-    do: cents |> Receipts.format_short() |> String.replace_prefix("Ksh ", "")
+    do: cents |> Transactions.format_short() |> String.replace_prefix("Ksh ", "")
 
   defp empty_text("", :all),
     do:
       "No receipts yet. Tap “Scan receipt” and take a photo of a receipt — the app reads the details and keeps the picture."
 
-  defp empty_text("", :requests),
-    do: "No requests yet. Tap + to request a payment, or open a receipt to ask for a refund."
+  defp empty_text("", :claims),
+    do:
+      "No refunds or payments yet. Tap + to request a payment, or open an expense to ask for a refund."
 
   defp empty_text("", group),
-    do: "No #{String.downcase(Receipts.group_label(group))} receipts yet."
+    do: "No #{String.downcase(Transactions.group_label(group))} expenses yet."
 
   defp empty_text(_query, _group), do: "Nothing matches your search."
 end

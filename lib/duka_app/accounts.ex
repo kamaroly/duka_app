@@ -80,9 +80,10 @@ defmodule DukaApp.Accounts do
       %{
         remote_user_id: user["id"],
         team: user["team"],
-        can_approve_receipts: permissions["approve_receipts"] == true,
-        can_approve_requests: permissions["approve_requests"] == true,
-        can_mark_paid: permissions["mark_requests_paid"] == true
+        can_approve: permissions["approve"] == true,
+        can_mark_paid: permissions["mark_paid"] == true,
+        can_list_all: permissions["list_all"] == true,
+        can_export: permissions["export"] == true
       }
       |> maybe_put(:api_token, user["token"])
       # The server's name fills in a blank one, never overwrites the user's.
@@ -100,9 +101,10 @@ defmodule DukaApp.Accounts do
     |> Ecto.Changeset.change(
       api_token: nil,
       team: nil,
-      can_approve_receipts: false,
-      can_approve_requests: false,
-      can_mark_paid: false
+      can_approve: false,
+      can_mark_paid: false,
+      can_list_all: false,
+      can_export: false
     )
     |> Repo.update()
   end

@@ -32,3 +32,6 @@ _build/mob_release/
 # Local SQLite databases
 /priv/repo/*.db*
 /priv/repo/receipt_photos/
+
+# ExUnit @tmp_dir scratch files
+/tmp/
