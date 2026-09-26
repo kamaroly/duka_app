@@ -21,8 +21,10 @@ defmodule DukaApp.Api do
 
   # ── Server address ─────────────────────────────────────────────────────────
 
+  # On the phone the app's config isn't loaded, so the default is what it
+  # uses; tests set `:api_url` to their stand-in.
   @spec base_url() :: String.t()
-  def base_url, do: Application.fetch_env!(:duka_app, :api_url)
+  def base_url, do: Application.get_env(:duka_app, :api_url, "https://expenses.zippiker.com")
 
   # ── Sign-in ────────────────────────────────────────────────────────────────
 
