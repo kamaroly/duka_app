@@ -18,8 +18,9 @@ From the home screen:
   off it, and any QR code on it.
 - **Scan QR code:** scan a KRA (eTIMS or TIMS) receipt's QR code. The app
   fetches KRA's record of the receipt and fills in the vendor, date, total
-  and items. A code already saved opens that transaction instead of making a
-  copy.
+  and items. The camera then opens for a photo of the receipt, which is
+  kept with it (cancel to go without). A code already saved opens that
+  transaction instead of making a copy.
 - **Add → Add an expense by hand.**
 
 Details read from KRA or a photo only fill fields you haven't typed in, and

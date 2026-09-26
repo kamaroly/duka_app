@@ -8,7 +8,9 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
 
     * `%{photo: tmp_path}` — a photo was just taken: save it and read it
       (OCR + QR) on the phone, then pre-fill the form.
-    * `%{qr: content}` — a QR code was just scanned.
+    * `%{qr: content}` — a QR code was just scanned. The camera opens
+      straight away for a photo of the receipt, so it's kept too (cancel
+      to go without).
     * `%{id: id}` — edit a saved transaction.
     * `%{}` — enter an expense by hand.
 
@@ -71,7 +73,7 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
     socket =
       case params do
         %{photo: tmp} -> read_photo(socket, tmp)
-        %{qr: _} -> lookup_kra(socket)
+        %{qr: _} -> socket |> lookup_kra() |> ask_for_photo()
         _ -> socket
       end
 
@@ -554,9 +556,21 @@ defmodule DukaApp.Screens.ReceiptFormScreen do
 
   # ── Helpers ─────────────────────────────────────────────────────────────────
 
-  defp read_photo(socket, tmp) do
+  # The scanner gives only the code's text, so after a scan the camera
+  # takes the picture of the receipt (the scanner already had the camera
+  # permission).
+  defp ask_for_photo(socket) do
     socket
-    |> Mob.Socket.assign(reading: true, notice: nil)
+    |> Mob.Socket.assign(:pending_camera, :take_photo)
+    |> Native.request_camera()
+  end
+
+  # What KRA said stays on show while the photo is read.
+  defp read_photo(socket, tmp) do
+    notice = if socket.assigns.from_kra == MapSet.new(), do: nil, else: socket.assigns.notice
+
+    socket
+    |> Mob.Socket.assign(reading: true, notice: notice)
     |> Native.process_photo(tmp, Photos.new_path())
   end
 

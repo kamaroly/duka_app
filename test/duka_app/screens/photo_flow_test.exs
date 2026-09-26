@@ -72,6 +72,44 @@ defmodule DukaApp.Screens.PhotoFlowTest do
       assert assigns(view).notice =~ "Verified with KRA and filled in"
     end
 
+    test "after a QR scan the camera opens, and the photo is kept with KRA's details",
+         %{profile: profile} do
+      view = mount_screen(ReceiptFormScreen, %{qr: @etims})
+      assert_received {:native, :lookup_kra, [@etims]}
+      assert_received {:native, :request_camera, []}
+
+      view = render_info(view, {:permission, :camera, :granted})
+      assert_received {:native, :take_photo, []}
+
+      view =
+        view
+        |> render_info({:kra, :result, @kra_details})
+        |> render_info({:camera, :photo, %{path: "/cache/mob_cam_2.jpg", width: 1, height: 1}})
+
+      assert_received {:native, :process_photo, ["/cache/mob_cam_2.jpg", dest]}
+      assert assigns(view).notice =~ "Verified with KRA"
+
+      view = render_info(view, ocr_reply(dest, @ocr_text))
+
+      assert %{receipt: %{photo_path: photo, qr_content: @etims, source: "etims"}} =
+               assigns(view)
+
+      assert photo == Photos.name(dest)
+      assert assigns(view).vendor == "Stabex International Limited"
+      assert assigns(view).notice =~ "Verified with KRA"
+
+      render_info(view, {:tap, :save})
+      assert [%{photo_path: ^photo, qr_content: @etims}] = Transactions.list_transactions(profile)
+    end
+
+    test "cancelling the camera after a QR scan keeps the form, without a photo" do
+      view = mount_screen(ReceiptFormScreen, %{qr: @etims})
+      view = render_info(view, {:permission, :camera, :granted})
+      view = render_info(view, {:camera, :cancelled})
+
+      assert %{receipt: %{photo_path: nil, qr_content: @etims}} = assigns(view)
+    end
+
     test "a receipt filled from KRA is saved as verified", %{profile: profile} do
       view =
         ReceiptFormScreen
