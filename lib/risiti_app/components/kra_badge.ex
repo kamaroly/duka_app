@@ -30,21 +30,21 @@ defmodule RisitiApp.Components.KraBadge do
     <Row align={:center} accessibility_label={label}>
       <Row
         background={:secondary}
-        corner_radius={6}
-        padding_left={5}
-        padding_right={5}
-        padding_top={1}
-        padding_bottom={1}
+        corner_radius={4}
+        padding_left={3}
+        padding_right={3}
+        padding_top={0}
+        padding_bottom={0}
       >
         <Text
           text="KRA"
-          text_size={10}
+          text_size={8}
           font_weight="bold"
-          letter_spacing={0.4}
+          letter_spacing={0.3}
           text_color={:on_secondary}
         />
       </Row>
-      <Spacer size={6} />
+      <Spacer size={5} />
     </Row>
     """
   end

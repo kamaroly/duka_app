@@ -7,9 +7,9 @@ defmodule RisitiApp.Components.TransactionItem do
   The card is a tinted badge (or the receipt photo), the vendor over what it
   was for (tagged KRA), and the amount over the date. Refunds and payment
   requests say what they are and always show their status; an expense
-  shows it once it's decided: approved (a green tick) and paid as icons next
-  to the sync cloud, pending and rejected as a slim pill, to keep the card
-  short.
+  shows it once it's decided: pending (an amber tick), approved (a green
+  tick) and paid as icons next to the sync cloud, rejected as a slim pill,
+  to keep the card short.
 
   Props: `transaction`, `sync: true` in a connected book to mark whether
   the team's server has it (see `SyncBadge`), and `personal: true` in a
@@ -144,15 +144,17 @@ defmodule RisitiApp.Components.TransactionItem do
   defp type_icon(%{method: "send_money"}), do: "phone"
   defp type_icon(_transaction), do: "store"
 
-  # Approved and paid are icons beside the sync cloud; pending and rejected
-  # are a slim pill under the date. Claims always say where they stand;
-  # expenses once they're decided.
-  defp status_icon(%{status: status}) when status in ["approved", "paid"] do
-    {icon, label} = if status == "paid", do: {"payments", "Paid"}, else: {"verified", "Approved"}
+  # Pending, approved and paid are icons beside the sync cloud (pending is
+  # the approved tick in amber); rejected is a slim pill under the date.
+  # Claims always say where they stand; expenses once they're decided.
+  defp status_icon(%{type: "expense", status: "pending"}), do: []
+
+  defp status_icon(%{status: status}) when status in ["pending", "approved", "paid"] do
+    {icon, color, label} = status_icon_style(status)
 
     ~MOB"""
     <Row align={:center} accessibility_label={label}>
-      <Icon name={icon} text_size={13} text_color={:secondary} />
+      <Icon name={icon} text_size={13} text_color={color} />
       <Spacer size={4} />
     </Row>
     """
@@ -160,8 +162,11 @@ defmodule RisitiApp.Components.TransactionItem do
 
   defp status_icon(_transaction), do: []
 
-  defp status_tag(%{status: status}) when status in ["approved", "paid"], do: []
-  defp status_tag(%{type: "expense", status: "pending"}), do: []
+  defp status_icon_style("pending"), do: {"verified", 0xFFF59E0B, "Waiting for approval"}
+  defp status_icon_style("approved"), do: {"verified", :secondary, "Approved"}
+  defp status_icon_style("paid"), do: {"payments", :secondary, "Paid"}
+
+  defp status_tag(%{status: status}) when status in ["pending", "approved", "paid"], do: []
 
   defp status_tag(%{status: status}) do
     {background, text_color} = status_colors(status)
