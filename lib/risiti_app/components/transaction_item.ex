@@ -5,9 +5,10 @@ defmodule RisitiApp.Components.TransactionItem do
   the home screen and the approver's Approvals screen.
 
   The card is a tinted badge (or the receipt photo), the vendor over what it
-  was for (tagged KRA, and ticked once verified), and the amount over the
-  date. Refunds and payment requests say what they are and always show
-  their status; an expense shows it once it's decided.
+  was for (tagged KRA), and the amount over the date. Refunds and payment
+  requests say what they are and always show their status; an expense
+  shows it once it's decided. Approved is a green tick rather than a pill,
+  to keep the card narrow.
 
   Props: `transaction`, `sync: true` in a connected book to mark whether
   the team's server has it (see `SyncBadge`), and `personal: true` in a
@@ -143,6 +144,14 @@ defmodule RisitiApp.Components.TransactionItem do
 
   # Claims always say where they stand; expenses once they're decided.
   defp status_tag(%{type: "expense", status: "pending"}), do: []
+
+  defp status_tag(%{status: "approved"}) do
+    ~MOB"""
+    <Row padding_top={4} accessibility_label="Approved">
+      <Icon name="verified" text_size={16} text_color={:secondary} />
+    </Row>
+    """
+  end
 
   defp status_tag(%{status: status}) do
     ~MOB"""

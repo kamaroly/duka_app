@@ -1,8 +1,9 @@
 defmodule RisitiApp.Components.KraBadge do
   @moduledoc """
-  Marks a KRA receipt: a small "KRA" tag, followed by a green verified tick
-  once KRA's verification page has returned the receipt. Renders nothing for
-  a receipt that isn't from a KRA QR code.
+  Marks a KRA receipt with a small green "KRA" tag. Renders nothing for a
+  receipt that isn't from a KRA QR code. The receipt's sheet says whether
+  KRA has verified it; in the list a green tick means approved (see
+  `TransactionItem`).
 
       <Row>
         {KraBadge.badge(receipt)}
@@ -28,9 +29,7 @@ defmodule RisitiApp.Components.KraBadge do
     ~MOB"""
     <Row align={:center} accessibility_label={label}>
       <Row
-        background={:surface_raised}
-        border_color={:border}
-        border_width={1}
+        background={:secondary}
         corner_radius={6}
         padding_left={5}
         padding_right={5}
@@ -42,11 +41,9 @@ defmodule RisitiApp.Components.KraBadge do
           text_size={10}
           font_weight="bold"
           letter_spacing={0.4}
-          text_color={:on_surface}
+          text_color={:on_secondary}
         />
       </Row>
-      <Spacer :if={verified?} size={4} />
-      <Icon :if={verified?} name="verified" text_size={15} text_color={:secondary} />
       <Spacer size={6} />
     </Row>
     """
