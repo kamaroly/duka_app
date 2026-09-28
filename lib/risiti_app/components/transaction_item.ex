@@ -7,8 +7,9 @@ defmodule RisitiApp.Components.TransactionItem do
   The card is a tinted badge (or the receipt photo), the vendor over what it
   was for (tagged KRA), and the amount over the date. Refunds and payment
   requests say what they are and always show their status; an expense
-  shows it once it's decided. Approved is a green tick rather than a pill,
-  to keep the card narrow.
+  shows it once it's decided: approved (a green tick) and paid as icons next
+  to the sync cloud, pending and rejected as a slim pill, to keep the card
+  short.
 
   Props: `transaction`, `sync: true` in a connected book to mark whether
   the team's server has it (see `SyncBadge`), and `personal: true` in a
@@ -78,6 +79,7 @@ defmodule RisitiApp.Components.TransactionItem do
             <Spacer size={3} />
             <Row align={:center}>
               {SyncBadge.badge(transaction, sync)}
+              {if not personal, do: status_icon(transaction)}
               <Text
                 text={Calendar.strftime(transaction.date, "%d %b")}
                 text_size={11}
@@ -142,21 +144,45 @@ defmodule RisitiApp.Components.TransactionItem do
   defp type_icon(%{method: "send_money"}), do: "phone"
   defp type_icon(_transaction), do: "store"
 
-  # Claims always say where they stand; expenses once they're decided.
-  defp status_tag(%{type: "expense", status: "pending"}), do: []
+  # Approved and paid are icons beside the sync cloud; pending and rejected
+  # are a slim pill under the date. Claims always say where they stand;
+  # expenses once they're decided.
+  defp status_icon(%{status: status}) when status in ["approved", "paid"] do
+    {icon, label} = if status == "paid", do: {"payments", "Paid"}, else: {"verified", "Approved"}
 
-  defp status_tag(%{status: "approved"}) do
     ~MOB"""
-    <Row padding_top={4} accessibility_label="Approved">
-      <Icon name="verified" text_size={16} text_color={:secondary} />
+    <Row align={:center} accessibility_label={label}>
+      <Icon name={icon} text_size={13} text_color={:secondary} />
+      <Spacer size={4} />
     </Row>
     """
   end
 
+  defp status_icon(_transaction), do: []
+
+  defp status_tag(%{status: status}) when status in ["approved", "paid"], do: []
+  defp status_tag(%{type: "expense", status: "pending"}), do: []
+
   defp status_tag(%{status: status}) do
+    {background, text_color} = status_colors(status)
+
     ~MOB"""
-    <Column padding_top={4}>
-      {status_pill(status)}
+    <Column padding_top={3}>
+      <Row
+        background={background}
+        corner_radius={:radius_pill}
+        padding_left={4}
+        padding_right={4}
+        padding_top={0}
+        padding_bottom={0}
+      >
+        <Text
+          text={short_status(status)}
+          text_size={10}
+          font_weight="semibold"
+          text_color={text_color}
+        />
+      </Row>
     </Column>
     """
   end
