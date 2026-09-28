@@ -73,5 +73,5 @@ of truth for decisions.
 When push is on (`config :risiti_app, :push`), the server tells the phone
 when someone else acts: an approver hears about new transactions, and the
 sender about decisions and payments. A push also triggers a sync. Push
-needs Firebase set up first (`android/app/google-services.json` and the
-server's FCM key), so it's off until then.
+needs Firebase set up first, so it's off until then. See
+[Push notifications](push-notifications.md).
