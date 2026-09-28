@@ -56,7 +56,7 @@ defmodule RisitiApp.Transactions do
   def group_label(:other), do: "Other"
 
   @doc """
-  Transactions for `profile`, newest first, with their attachments,
+  Transactions for `profile`, most recently changed first, with their attachments,
   optionally filtered by `search` (vendor, description, category, or any
   text read off the photo) and by spending group or to claims (refunds and
   payment requests).
@@ -66,7 +66,7 @@ defmodule RisitiApp.Transactions do
     query =
       from(t in Transaction,
         where: t.profile_id == ^profile_id,
-        order_by: [desc: t.date, desc: t.id],
+        order_by: [desc: t.updated_at, desc: t.id],
         preload: :attachments
       )
       |> filtered(filter)
