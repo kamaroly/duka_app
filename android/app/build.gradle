@@ -34,6 +34,9 @@ def mobDir             = localProps.getProperty('mob.mob_dir',           System.
 def ertsVsn = new File(mobOtpRelease).listFiles()
     ?.find { it.name.startsWith('erts-') }?.name ?: 'erts-17.0'
 
+// `./gradlew assembleRelease` builds one APK per phone ABI (see `splits`).
+def releaseApks = gradle.startParameter.taskNames.any { it.contains("assembleRelease") }
+
 android {
     namespace 'com.example.risiti_app'
     compileSdk 35
@@ -54,7 +57,8 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
-        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
+        // Release APKs pick their ABIs through `splits` below instead.
+        if (!releaseApks) ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
 
         externalNativeBuild {
             cmake {
@@ -110,9 +114,27 @@ android {
         }
     }
 
+    // Release APKs are split per ABI: phones (nearly all arm64-v8a, a few old
+    // armeabi-v7a) each get only their own native libraries, and the
+    // emulator-only x86_64 is left out. Debug builds (mix mob.deploy) and the
+    // .aab (Play splits it itself) are unaffected.
+    splits {
+        abi {
+            enable releaseApks
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a'
+            universalApk false
+        }
+    }
+
     buildTypes {
         release {
-            minifyEnabled false
+            // R8 drops unused code (most of material-icons-extended, …) and
+            // resources; app/proguard-rules.pro keeps what the BEAM calls
+            // through JNI.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (keystorePropsFile.exists()) signingConfig signingConfigs.release
         }
         debug   { jniDebuggable true }
