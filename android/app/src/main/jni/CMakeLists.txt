@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(duka_app)
+project(risiti_app)
 
 # Paths injected by build.gradle (read from android/local.properties or env vars).
 # OTP_RELEASE (arm64), OTP_RELEASE_ARM32, OTP_RELEASE_X86_64, ERTS_VSN, MOB_DIR are set via -D flags.
@@ -20,7 +20,7 @@ set(MOB_DEPS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../deps")
 set(_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../")
 
 # Phase 2 of the build-system migration: build.zig owns the entire native
-# pipeline for libduka_app.so when Mix runs the build (compile + link
+# pipeline for librisiti_app.so when Mix runs the build (compile + link
 # both happen in zig). The .so is dropped into jniLibs/<abi>/ where
 # Gradle's default jniLibs.srcDirs scan picks it up — no add_library
 # target needed in that case.
@@ -31,7 +31,7 @@ set(_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../")
 #   2. zig-built .o files in zig-out/    →  CMake links them via NDK clang
 #   3. .c sources                          →  NDK clang compiles + links
 set(ZIG_OUT_DIR "${_PROJECT_ROOT}/android/app/build/zig-out/${ANDROID_ABI}")
-set(ZIG_LIB_SO "${_PROJECT_ROOT}/android/app/src/main/jniLibs/${ANDROID_ABI}/libduka_app.so")
+set(ZIG_LIB_SO "${_PROJECT_ROOT}/android/app/src/main/jniLibs/${ANDROID_ABI}/librisiti_app.so")
 
 if(EXISTS "${ZIG_LIB_SO}")
     # build.zig already produced the .so. Gradle picks it up from jniLibs/.
@@ -41,13 +41,13 @@ if(EXISTS "${ZIG_LIB_SO}")
     # without it the linker bakes the absolute IMPORTED_LOCATION path into
     # sqlite3_nif.so's needed-libraries list and Android's dlopen can't find
     # it at runtime ("library "/.../jniLibs/.../lib<app>.so" not found").
-    add_library(duka_app SHARED IMPORTED GLOBAL)
-    set_target_properties(duka_app PROPERTIES
+    add_library(risiti_app SHARED IMPORTED GLOBAL)
+    set_target_properties(risiti_app PROPERTIES
         IMPORTED_LOCATION "${ZIG_LIB_SO}"
-        IMPORTED_SONAME "libduka_app.so"
+        IMPORTED_SONAME "librisiti_app.so"
     )
 elseif(EXISTS "${ZIG_OUT_DIR}/driver_tab_android.o")
-    add_library(duka_app SHARED
+    add_library(risiti_app SHARED
         ${ZIG_OUT_DIR}/beam_jni.o
         ${ZIG_OUT_DIR}/mob_nif.o
         ${ZIG_OUT_DIR}/mob_beam.o
@@ -55,7 +55,7 @@ elseif(EXISTS "${ZIG_OUT_DIR}/driver_tab_android.o")
     )
     # CMake can't infer linker language from .o files alone — pin it to C
     # so it picks clang's C driver.
-    set_target_properties(duka_app PROPERTIES LINKER_LANGUAGE C)
+    set_target_properties(risiti_app PROPERTIES LINKER_LANGUAGE C)
 else()
     if(EXISTS "${_PROJECT_ROOT}/priv/generated/driver_tab_android.c")
         set(DRIVER_TAB_ANDROID "${_PROJECT_ROOT}/priv/generated/driver_tab_android.c")
@@ -75,7 +75,7 @@ else()
     # `project_c_nifs` flag — see jni/build.zig.
     file(GLOB PROJECT_NIF_C_SRCS "${_PROJECT_ROOT}/c_src/*.c")
 
-    add_library(duka_app SHARED
+    add_library(risiti_app SHARED
         beam_jni.c
         ${MOB_DIR}/android/jni/mob_nif.c
         ${MOB_DIR}/android/jni/mob_beam.c
@@ -99,7 +99,7 @@ else()
 endif()
 
 # Everything below applies only to CMake-built main library targets. When
-# build.zig produced libduka_app.so already (Phase 2 iter 10),
+# build.zig produced librisiti_app.so already (Phase 2 iter 10),
 # the target is IMPORTED — skip these blocks since target_compile_options
 # / target_link_libraries can't be applied to imported targets, and the
 # zig-built .so already has them baked in.
@@ -111,23 +111,23 @@ if(NOT EXISTS "${ZIG_LIB_SO}")
     # them from the final binary; dlopen'd NIFs need them at runtime.
     # No-op when absent (vanilla projects without dynamic NIFs).
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/enif_keepalive.c")
-        target_sources(duka_app PRIVATE enif_keepalive.c)
+        target_sources(risiti_app PRIVATE enif_keepalive.c)
     endif()
 
-    target_include_directories(duka_app PRIVATE
+    target_include_directories(risiti_app PRIVATE
         ${MOB_DIR}/android/jni
         ${OTP_DIR}/${ERTS_VSN}/include
     )
 
-    target_compile_definitions(duka_app PRIVATE STATIC_ERLANG_NIF)
+    target_compile_definitions(risiti_app PRIVATE STATIC_ERLANG_NIF)
 
     # -Os + per-function/data sections — same flags build.zig uses, so the
     # CMake fallback path produces equivalent code.
-    target_compile_options(duka_app PRIVATE
+    target_compile_options(risiti_app PRIVATE
         -Os -ffunction-sections -fdata-sections
     )
 
-    target_link_libraries(duka_app
+    target_link_libraries(risiti_app
         PRIVATE
         -Wl,--gc-sections
         -Wl,--allow-multiple-definition
@@ -180,7 +180,7 @@ if(NOT EXISTS "${ZIG_SQLITE_SO}")
     )
 
     target_link_libraries(sqlite3_nif
-        duka_app
+        risiti_app
         android
         log
     )

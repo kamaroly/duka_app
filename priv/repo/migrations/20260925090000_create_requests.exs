@@ -1,4 +1,4 @@
-defmodule DukaApp.Repo.Migrations.CreateRequests do
+defmodule RisitiApp.Repo.Migrations.CreateRequests do
   use Ecto.Migration
 
   def change do

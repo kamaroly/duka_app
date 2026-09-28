@@ -1,4 +1,4 @@
-defmodule DukaApp.Repo.Migrations.CreateTransactions do
+defmodule RisitiApp.Repo.Migrations.CreateTransactions do
   use Ecto.Migration
 
   # Receipts, refund requests and payment requests become one table of

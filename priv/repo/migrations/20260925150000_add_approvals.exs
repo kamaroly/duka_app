@@ -1,4 +1,4 @@
-defmodule DukaApp.Repo.Migrations.AddApprovals do
+defmodule RisitiApp.Repo.Migrations.AddApprovals do
   use Ecto.Migration
 
   def change do

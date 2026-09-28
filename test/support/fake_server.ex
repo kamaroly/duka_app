@@ -1,6 +1,6 @@
-defmodule DukaApp.FakeServer do
+defmodule RisitiApp.FakeServer do
   @moduledoc """
-  Stands in for the Risiti server in tests (`config :duka_app, :http`).
+  Stands in for the Risiti server in tests (`config :risiti_app, :http`).
 
   A test scripts the replies with `stub/1`: a function from
   `{method, path, request}` to `{status, body}` (or `{:error, reason}`).
@@ -9,7 +9,7 @@ defmodule DukaApp.FakeServer do
   `:body`, so a test can check what the app sent.
 
   Screen server calls and syncs run in the test process under test config
-  (`DukaApp.Native.background/3`), so the stub lives in the process
+  (`RisitiApp.Native.background/3`), so the stub lives in the process
   dictionary.
   """
 

@@ -4,11 +4,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.example.duka_app</string>
+    <string>com.example.risiti_app</string>
     <key>CFBundleName</key>
-    <string>DukaApp</string>
+    <string>RisitiApp</string>
     <key>CFBundleExecutable</key>
-    <string>DukaApp</string>
+    <string>RisitiApp</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
@@ -35,7 +35,7 @@
         <string>audio</string>
     </array>
     <key>NSMicrophoneUsageDescription</key>
-    <string>DukaApp uses the microphone for audio recording.</string>
+    <string>RisitiApp uses the microphone for audio recording.</string>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIApplicationSceneManifest</key>

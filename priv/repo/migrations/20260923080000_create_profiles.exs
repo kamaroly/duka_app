@@ -1,4 +1,4 @@
-defmodule DukaApp.Repo.Migrations.CreateProfiles do
+defmodule RisitiApp.Repo.Migrations.CreateProfiles do
   use Ecto.Migration
 
   # The old single-row `profile` table (email required, phone optional) and the

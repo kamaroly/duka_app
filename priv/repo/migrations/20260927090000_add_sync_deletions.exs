@@ -1,9 +1,9 @@
-defmodule DukaApp.Repo.Migrations.AddSyncDeletions do
+defmodule RisitiApp.Repo.Migrations.AddSyncDeletions do
   use Ecto.Migration
 
   def change do
     # Receipts deleted and requests withdrawn on the phone, until the next
-    # sync tells the server (see DukaApp.Sync).
+    # sync tells the server (see RisitiApp.Sync).
     create table(:sync_deletions) do
       add :profile_id, references(:profiles, on_delete: :delete_all), null: false
       add :kind, :string, null: false

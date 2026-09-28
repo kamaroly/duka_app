@@ -6,7 +6,7 @@ plugins {
 // FCM push notifications (mob_notify) read the Firebase project from
 // google-services.json (Firebase console → Project settings → Your apps).
 // Without it the app builds and runs, but can't receive pushes — keep
-// `config :duka_app, :push` false until it's here.
+// `config :risiti_app, :push` false until it's here.
 if (file('google-services.json').exists()) {
     apply plugin: 'com.google.gms.google-services'
 }
@@ -35,7 +35,7 @@ def ertsVsn = new File(mobOtpRelease).listFiles()
     ?.find { it.name.startsWith('erts-') }?.name ?: 'erts-17.0'
 
 android {
-    namespace 'com.example.duka_app'
+    namespace 'com.example.risiti_app'
     compileSdk 35
 
     // Pin NDK to match the one that built the bundled OTP runtime.
@@ -46,7 +46,7 @@ android {
     ndkVersion '27.2.12479018'
 
     defaultConfig {
-        applicationId "com.example.duka_app"
+        applicationId "com.example.risiti_app"
         minSdk 28
         targetSdk 35
         versionCode 3

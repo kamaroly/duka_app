@@ -1,4 +1,4 @@
-// build_device.zig — Native build orchestration for DukaApp (iOS device).
+// build_device.zig — Native build orchestration for RisitiApp (iOS device).
 //
 // Phase 2 iter 12 of the build-system migration. Sister to ios/build.zig
 // (which targets iOS sim). Handles the seven standard native sources for

@@ -1,4 +1,4 @@
-defmodule DukaApp.Repo.Migrations.AddServerSync do
+defmodule RisitiApp.Repo.Migrations.AddServerSync do
   use Ecto.Migration
 
   def change do

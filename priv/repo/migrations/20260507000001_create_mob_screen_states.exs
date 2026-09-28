@@ -1,4 +1,4 @@
-defmodule DukaApp.Repo.Migrations.CreateMobScreenStates do
+defmodule RisitiApp.Repo.Migrations.CreateMobScreenStates do
   use Ecto.Migration
 
   def change do

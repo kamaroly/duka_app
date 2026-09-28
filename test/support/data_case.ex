@@ -1,4 +1,4 @@
-defmodule DukaApp.DataCase do
+defmodule RisitiApp.DataCase do
   @moduledoc """
   Test case for anything that touches the database. Each test runs in a
   sandboxed transaction that is rolled back afterwards.
@@ -10,22 +10,22 @@ defmodule DukaApp.DataCase do
 
   using do
     quote do
-      alias DukaApp.Repo
+      alias RisitiApp.Repo
 
       import Ecto
       import Ecto.Changeset
       import Ecto.Query
-      import DukaApp.DataCase
+      import RisitiApp.DataCase
     end
   end
 
   setup tags do
-    DukaApp.DataCase.setup_sandbox(tags)
+    RisitiApp.DataCase.setup_sandbox(tags)
     :ok
   end
 
   def setup_sandbox(tags) do
-    pid = Sandbox.start_owner!(DukaApp.Repo, shared: not tags[:async])
+    pid = Sandbox.start_owner!(RisitiApp.Repo, shared: not tags[:async])
     on_exit(fn -> Sandbox.stop_owner(pid) end)
   end
 

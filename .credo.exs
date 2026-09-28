@@ -1,4 +1,4 @@
-# .credo.exs — Credo config for duka_app.
+# .credo.exs — Credo config for risiti_app.
 #
 # Run `mix credo --strict`. ExSlop is registered as a *plugin* (per its
 # README) — registering it under checks.enabled makes Credo ignore it as an

@@ -1,4 +1,4 @@
-// build.zig — Native build orchestration for DukaApp (iOS sim).
+// build.zig — Native build orchestration for RisitiApp (iOS sim).
 //
 // Phase 2 of the build-system migration. Owns the full native compile + link
 // of the iOS sim binary:
@@ -34,7 +34,7 @@
 //
 //   `zig build objects` — compile only, leave outputs in zig-out/
 //   `zig build binary`  — full pipeline through the link, binary at
-//                         zig-out/DukaApp
+//                         zig-out/RisitiApp
 //
 // Subsequent Phase 2 commits will move the bundle/install glue out of
 // build.sh into a Mix task.

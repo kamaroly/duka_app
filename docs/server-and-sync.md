@@ -3,12 +3,12 @@
 ## Which server
 
 The app always talks to **https://expenses.zippiker.com**
-(`config :duka_app, :api_url`, read by `DukaApp.Api.base_url/0`). Users
+(`config :risiti_app, :api_url`, read by `RisitiApp.Api.base_url/0`). Users
 can't change it.
 
 To try the app against a server on your laptop, with the phone on USB:
 
-1. Temporarily set `config :duka_app, :api_url, "http://127.0.0.1:4000"` in
+1. Temporarily set `config :risiti_app, :api_url, "http://127.0.0.1:4000"` in
    `config/config.exs`. Don't commit it.
 2. Run `adb reverse tcp:4000 tcp:4000`, so 127.0.0.1 on the phone reaches
    the laptop.
@@ -21,7 +21,7 @@ server, and app 1.1 can't sync with the new one.
 
 ## What sync does
 
-Sync (`DukaApp.Sync`) keeps a connected book and the server in step. Each
+Sync (`RisitiApp.Sync`) keeps a connected book and the server in step. Each
 run:
 
 1. **Deletes** on the server what was deleted on the phone. The server keeps
@@ -70,7 +70,7 @@ of truth for decisions.
 
 ## Push notifications
 
-When push is on (`config :duka_app, :push`), the server tells the phone
+When push is on (`config :risiti_app, :push`), the server tells the phone
 when someone else acts: an approver hears about new transactions, and the
 sender about decisions and payments. A push also triggers a sync. Push
 needs Firebase set up first (`android/app/google-services.json` and the

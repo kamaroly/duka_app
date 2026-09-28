@@ -1,4 +1,4 @@
-defmodule DukaApp.Repo.Migrations.CreateProfile do
+defmodule RisitiApp.Repo.Migrations.CreateProfile do
   use Ecto.Migration
 
   def change do

@@ -11,4 +11,4 @@
 )
 
 ExUnit.start()
-Ecto.Adapters.SQL.Sandbox.mode(DukaApp.Repo, :manual)
+Ecto.Adapters.SQL.Sandbox.mode(RisitiApp.Repo, :manual)

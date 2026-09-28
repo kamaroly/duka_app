@@ -1,4 +1,4 @@
-defmodule DukaApp.Repo.Migrations.AddTeamKindToProfiles do
+defmodule RisitiApp.Repo.Migrations.AddTeamKindToProfiles do
   use Ecto.Migration
 
   def change do

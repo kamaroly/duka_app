@@ -1,4 +1,4 @@
-defmodule DukaApp.Repo.Migrations.AddPhoneToProfile do
+defmodule RisitiApp.Repo.Migrations.AddPhoneToProfile do
   use Ecto.Migration
 
   def change do

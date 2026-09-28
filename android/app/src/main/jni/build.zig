@@ -1,4 +1,4 @@
-// build.zig — Android native build for duka_app.
+// build.zig — Android native build for risiti_app.
 //
 // Phase 2 of the build-system migration. Owns the full native build:
 //
@@ -14,8 +14,8 @@
 //   Link (zig cc -shared):
 //     all 4 .o files + OTP/crypto static libs + Android system libs
 //     (libandroid, liblog, libz, libc++_static, libc++abi).
-//     Output: libduka_app.so installed to
-//     android/app/src/main/jniLibs/<abi>/libduka_app.so so
+//     Output: librisiti_app.so installed to
+//     android/app/src/main/jniLibs/<abi>/librisiti_app.so so
 //     Gradle picks it up via the default jniLibs.srcDirs scan.
 //
 // Per-ABI invocation by Mix's NativeBuild before gradle_assemble:
@@ -28,7 +28,7 @@
 //       -Ddriver_tab=$DRIVER_TAB_ANDROID \
 //       -Dproject_jni_dir=$(pwd)/android/app/src/main/jni \
 //       -Dndk_sysroot=$NDK_SYSROOT \
-//       -Dapp_name=duka_app \
+//       -Dapp_name=risiti_app \
 //       -Dproject_root=$(pwd)
 //
 // Steps:

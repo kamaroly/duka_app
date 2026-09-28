@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.duka_app">
+    package="com.example.risiti_app">
 
     <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -63,7 +63,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- mob:plugin-permissions END -->
     <application
-        android:label="DukaApp"
+        android:label="RisitiApp"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:extractNativeLibs="true"

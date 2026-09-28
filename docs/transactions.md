@@ -1,6 +1,6 @@
 # Transactions
 
-Everything in the book is a **transaction** (`DukaApp.Transactions`), stored
+Everything in the book is a **transaction** (`RisitiApp.Transactions`), stored
 in the phone's SQLite database, so the app works without a connection.
 There are three types, the same as on the server:
 

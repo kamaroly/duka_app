@@ -37,8 +37,8 @@ The button only shows once Google is set up.
 
 | Setting | Where |
 |---|---|
-| `config :duka_app, :google_client_id` | `config/config.exs`: the **Web** OAuth client id, the same one as the server's `GOOGLE_CLIENT_IDS`. `nil` hides the button. |
-| Android OAuth client | The same Google Cloud project: package `com.example.duka_app`, with the SHA-1 of **both** the debug and the release signing keys |
+| `config :risiti_app, :google_client_id` | `config/config.exs`: the **Web** OAuth client id, the same one as the server's `GOOGLE_CLIENT_IDS`. `nil` hides the button. |
+| Android OAuth client | The same Google Cloud project: package `com.example.risiti_app`, with the SHA-1 of **both** the debug and the release signing keys |
 
 To get the release key's SHA-1:
 

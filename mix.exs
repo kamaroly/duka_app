@@ -1,9 +1,9 @@
-defmodule DukaApp.MixProject do
+defmodule RisitiApp.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :duka_app,
+      app: :risiti_app,
       version: "0.1.0",
       elixir: "~> 1.18",
       start_permanent: false,
@@ -17,7 +17,7 @@ defmodule DukaApp.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger], mod: {DukaApp.Application, []}]
+    [extra_applications: [:logger], mod: {RisitiApp.Application, []}]
   end
 
   defp deps do
@@ -33,7 +33,7 @@ defmodule DukaApp.MixProject do
       {:mob_camera, "~> 0.1"},
       {:mob_scanner, "~> 0.1"},
       {:mob_biometric, "~> 0.1"},
-      # Push notifications from the Risiti server (see DukaApp.Push). Android
+      # Push notifications from the Risiti server (see RisitiApp.Push). Android
       # also needs android/app/google-services.json from Firebase.
       {:mob_notify, "~> 0.1"},
       # Local plugin: receipt photo processing + on-device OCR (ML Kit).
