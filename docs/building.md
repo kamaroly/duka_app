@@ -9,8 +9,8 @@ won't install it over the old one. Both numbers are in
 `android/app/build.gradle`:
 
 ```gradle
-versionCode 4
-versionName "1.3"
+versionCode 5
+versionName "1.4"
 ```
 
 Add release notes for each version in `docs/releases/`.

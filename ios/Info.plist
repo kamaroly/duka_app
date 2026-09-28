@@ -37,7 +37,12 @@
     <key>NSMicrophoneUsageDescription</key>
     <string>RisitiApp uses the microphone for audio recording.</string>
     <key>UILaunchScreen</key>
-    <dict/>
+    <dict>
+        <key>UIColorName</key>
+        <string>LaunchBackground</string>
+        <key>UIImageName</key>
+        <string>LaunchLogo</string>
+    </dict>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>

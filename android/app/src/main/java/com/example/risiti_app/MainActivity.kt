@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.drawable.ColorDrawable
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -27,9 +28,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -218,6 +221,16 @@ class MainActivity : ComponentActivity() {
                     onError          = colorFromMap(tc, "on_error",         0xFFFFFFFF),
                 )
             } ?: darkColorScheme()
+
+            // The window shows the splash (drawable/splash.xml) until the first
+            // screen arrives; then the theme's background, which also fills
+            // behind the status and navigation bars (the app is edge-to-edge).
+            val appBackground = colorScheme.background
+            LaunchedEffect(state.node != null, appBackground) {
+                if (state.node != null) {
+                    window.setBackgroundDrawable(ColorDrawable(appBackground.toArgb()))
+                }
+            }
 
             MaterialTheme(colorScheme = colorScheme) {
                 AnimatedContent(
