@@ -63,7 +63,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- mob:plugin-permissions END -->
     <application
-        android:label="RisitiApp"
+        android:label="Risiti"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:extractNativeLibs="true"

@@ -6,7 +6,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.example.risiti_app</string>
     <key>CFBundleName</key>
-    <string>RisitiApp</string>
+    <string>Risiti</string>
+    <key>CFBundleDisplayName</key>
+    <string>Risiti</string>
     <key>CFBundleExecutable</key>
     <string>RisitiApp</string>
     <key>CFBundleVersion</key>
@@ -35,7 +37,7 @@
         <string>audio</string>
     </array>
     <key>NSMicrophoneUsageDescription</key>
-    <string>RisitiApp uses the microphone for audio recording.</string>
+    <string>Risiti uses the microphone for audio recording.</string>
     <key>UILaunchScreen</key>
     <dict>
         <key>UIColorName</key>
