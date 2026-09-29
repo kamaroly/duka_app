@@ -3699,6 +3699,7 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "image"           -> Icons.Filled.Image
         "cloud_done"      -> Icons.Filled.CloudDone
         "cloud_upload"    -> Icons.Filled.CloudUpload
+        "calendar"        -> Icons.Filled.DateRange
         else              -> Icons.Filled.QuestionMark
     }
 

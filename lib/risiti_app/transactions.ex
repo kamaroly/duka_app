@@ -29,6 +29,19 @@ defmodule RisitiApp.Transactions do
   @type group :: :food | :fuel | :other
   @type filter :: group() | :all | :claims
 
+  # The list's date filter: a preset relative to today, or dates the user
+  # chose (either end may be open).
+  @type period ::
+          :all_dates
+          | :today
+          | :last_7_days
+          | :this_month
+          | :last_month
+          | :this_year
+          | {:dates, Date.t() | nil, Date.t() | nil}
+
+  @periods [:all_dates, :today, :last_7_days, :this_month, :last_month, :this_year]
+
   defdelegate categories, to: Transaction
 
   @spec groups() :: [group()]
@@ -58,11 +71,16 @@ defmodule RisitiApp.Transactions do
   @doc """
   Transactions for `profile`, most recently changed first, with their attachments,
   optionally filtered by `search` (vendor, description, category, or any
-  text read off the photo) and by spending group or to claims (refunds and
-  payment requests).
+  text read off the photo), by spending group or to claims (refunds and
+  payment requests), and by the transaction's date (see `date_range/2`).
   """
-  @spec list_transactions(Profile.t(), String.t(), filter()) :: [Transaction.t()]
-  def list_transactions(%Profile{id: profile_id}, search \\ "", filter \\ :all) do
+  @spec list_transactions(Profile.t(), String.t(), filter(), period()) :: [Transaction.t()]
+  def list_transactions(
+        %Profile{id: profile_id},
+        search \\ "",
+        filter \\ :all,
+        period \\ :all_dates
+      ) do
     query =
       from(t in Transaction,
         where: t.profile_id == ^profile_id,
@@ -70,6 +88,7 @@ defmodule RisitiApp.Transactions do
         preload: :attachments
       )
       |> filtered(filter)
+      |> dated(date_range(period))
 
     case String.trim(search) do
       "" ->
@@ -101,6 +120,76 @@ defmodule RisitiApp.Transactions do
     categories = Keyword.fetch!(@groups, group)
     from t in query, where: t.category in ^categories
   end
+
+  defp dated(query, {nil, nil}), do: query
+  defp dated(query, {from, nil}), do: from(t in query, where: t.date >= ^from)
+  defp dated(query, {nil, to}), do: from(t in query, where: t.date <= ^to)
+
+  defp dated(query, {from, to}),
+    do: from(t in query, where: t.date >= ^from and t.date <= ^to)
+
+  # ── Date filter ────────────────────────────────────────────────────────────
+
+  @doc "The preset periods the date filter offers, in order."
+  @spec periods() :: [period()]
+  def periods, do: @periods
+
+  @doc """
+  The first and last day of `period` (either may be nil: no limit that way).
+
+      iex> RisitiApp.Transactions.date_range(:last_month, ~D[2026-03-31])
+      {~D[2026-02-01], ~D[2026-02-28]}
+
+      iex> RisitiApp.Transactions.date_range(:last_7_days, ~D[2026-09-29])
+      {~D[2026-09-23], ~D[2026-09-29]}
+
+      iex> RisitiApp.Transactions.date_range({:dates, ~D[2026-01-01], nil}, ~D[2026-09-29])
+      {~D[2026-01-01], nil}
+  """
+  @spec date_range(period(), Date.t()) :: {Date.t() | nil, Date.t() | nil}
+  def date_range(period, today \\ today())
+  def date_range(:all_dates, _today), do: {nil, nil}
+  def date_range(:today, today), do: {today, today}
+  def date_range(:last_7_days, today), do: {Date.add(today, -6), today}
+  def date_range(:this_month, today), do: {Date.beginning_of_month(today), today}
+
+  def date_range(:last_month, today) do
+    last_month = today |> Date.beginning_of_month() |> Date.add(-1)
+    {Date.beginning_of_month(last_month), last_month}
+  end
+
+  def date_range(:this_year, today), do: {Date.new!(today.year, 1, 1), today}
+  def date_range({:dates, from, to}, _today), do: {from, to}
+
+  @doc """
+  What the date filter shows.
+
+      iex> RisitiApp.Transactions.period_label({:dates, ~D[2026-09-01], ~D[2026-09-15]})
+      "1 Sep 2026 – 15 Sep 2026"
+
+      iex> RisitiApp.Transactions.period_label({:dates, nil, ~D[2026-09-15]})
+      "Up to 15 Sep 2026"
+  """
+  @spec period_label(period()) :: String.t()
+  def period_label(:all_dates), do: "All dates"
+  def period_label(:today), do: "Today"
+  def period_label(:last_7_days), do: "Last 7 days"
+  def period_label(:this_month), do: "This month"
+  def period_label(:last_month), do: "Last month"
+  def period_label(:this_year), do: "This year"
+  def period_label({:dates, nil, nil}), do: "All dates"
+  def period_label({:dates, from, nil}), do: "From #{format_date(from)}"
+  def period_label({:dates, nil, to}), do: "Up to #{format_date(to)}"
+  def period_label({:dates, from, to}), do: "#{format_date(from)} – #{format_date(to)}"
+
+  @doc """
+  A date as people write it.
+
+      iex> RisitiApp.Transactions.format_date(~D[2026-09-03])
+      "3 Sep 2026"
+  """
+  @spec format_date(Date.t()) :: String.t()
+  def format_date(%Date{} = date), do: "#{date.day} #{Calendar.strftime(date, "%b %Y")}"
 
   @doc "The transaction, with its attachments, or nil if it no longer exists."
   @spec get_transaction(Profile.t(), integer()) :: Transaction.t() | nil

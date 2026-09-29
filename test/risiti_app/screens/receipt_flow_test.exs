@@ -6,8 +6,18 @@ defmodule RisitiApp.Screens.ReceiptFlowTest do
 
   alias RisitiApp.{Accounts, Appearance, Transactions}
   alias RisitiApp.Accounts.Profile
-  alias RisitiApp.Screens.{PhoneScreen, ReceiptFormScreen, ReceiptsScreen, SettingsScreen}
+
+  alias RisitiApp.Screens.{
+    DateRangeScreen,
+    PhoneScreen,
+    ReceiptFormScreen,
+    ReceiptsScreen,
+    SettingsScreen
+  }
+
   alias RisitiApp.Theme.{Dark, Light}
+
+  doctest DateRangeScreen
 
   @etims "https://etims.kra.go.ke/common/link/etims/receipt/indexEtimsReceiptData?Data=P051300254O695LJT35ZUB2SHJ7N7"
   # :icon renders on both platforms but is missing from mob's priv/tags lists.
@@ -415,6 +425,99 @@ defmodule RisitiApp.Screens.ReceiptFlowTest do
 
       view = render_info(view, {:alert, :month_0})
       assert assigns(view).month == this_month
+    end
+
+    test "the date filter narrows the list to a period or chosen dates", %{profile: profile} do
+      today = Transactions.today()
+
+      for {vendor, date} <- [{"Today", today}, {"Old", ~D[2025-01-15]}] do
+        {:ok, _} =
+          Transactions.create_transaction(profile, Transactions.new_expense(), %{
+            date: date,
+            vendor: vendor,
+            amount_cents: 1_000,
+            category: "Other"
+          })
+      end
+
+      view = mount_screen(ReceiptsScreen)
+      assert [_, _] = assigns(view).items
+      assert text(view) =~ "All dates"
+
+      view = render_info(view, {:alert, :period_this_month})
+      assert Enum.map(assigns(view).items, & &1.vendor) == ["Today"]
+      assert text(view) =~ "This month"
+      assert_renderable(view, extra: @extra)
+
+      view = render_info(view, {:alert, :choose_dates})
+      assert nav_action(view) |> inspect() =~ "DateRangeScreen"
+
+      view = render_info(view, {:dates_chosen, ~D[2025-01-01], ~D[2025-01-31]})
+      assert Enum.map(assigns(view).items, & &1.vendor) == ["Old"]
+      assert text(view) =~ "1 Jan 2025 – 31 Jan 2025"
+
+      view = render_info(view, {:dates_chosen, ~D[2024-01-01], ~D[2024-12-31]})
+      assert assigns(view).items == []
+      assert text(view) =~ "Nothing for 1 Jan 2024 – 31 Dec 2024."
+
+      view = render_info(view, {:dates_chosen, nil, nil})
+      assert assigns(view).period == :all_dates
+      assert [_, _] = assigns(view).items
+    end
+
+    test "the date screen checks the dates and sends them back" do
+      view = mount_screen(DateRangeScreen, %{from: ~D[2026-09-01], to: nil, notify: self()})
+      assert assigns(view).from == "2026-09-01"
+      assert_renderable(view, extra: @extra)
+
+      view =
+        view
+        |> render_info({:change, :to, "2026-08-01"})
+        |> render_info({:tap, :apply})
+
+      assert assigns(view).errors == %{to: "must be on or after the From date"}
+      refute_received {:dates_chosen, _, _}
+
+      view
+      |> render_info({:change, :to, "2026-09-15"})
+      |> render_info({:tap, :apply})
+
+      assert_received {:dates_chosen, ~D[2026-09-01], ~D[2026-09-15]}
+    end
+
+    test "PDF exports what the list shows and opens it", %{profile: profile} do
+      for {vendor, category} <- [{"Naivas", "Food & Groceries"}, {"Shell", "Fuel"}] do
+        {:ok, _} =
+          Transactions.create_transaction(profile, Transactions.new_expense(), %{
+            date: Transactions.today(),
+            vendor: vendor,
+            amount_cents: 1_000,
+            category: category
+          })
+      end
+
+      view =
+        ReceiptsScreen
+        |> mount_screen()
+        |> render_info({:tap, {:group, :fuel}})
+        |> render_info({:tap, :export_pdf})
+
+      assert_received {:pdf_written, {:ok, path} = result}
+      view = render_info(view, {:pdf_written, result})
+      assert_received {:native, :open_file, [^path]}
+      refute assigns(view).exporting
+
+      pdf = File.read!(path)
+      assert "%PDF-1.4" <> _ = pdf
+      assert pdf =~ "(Shell)"
+      refute pdf =~ "(Naivas)"
+      assert pdf =~ "(Showing: Fuel)"
+    end
+
+    test "PDF with nothing listed says so", %{profile: _profile} do
+      view = ReceiptsScreen |> mount_screen() |> render_info({:tap, :export_pdf})
+      assert_received {:native, :toast, ["Nothing to export"]}
+      refute assigns(view).exporting
     end
 
     test "a new scan opens the confirm form with the QR details" do

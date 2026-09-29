@@ -17,6 +17,11 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
   it and reads the details off it. "Scan QR only" opens the QR scanner; a code
   that was already saved opens the saved transaction instead of a duplicate.
   An expense opened from the list can be claimed back as a refund.
+
+  The list can be narrowed to a period (a preset or dates the user picks),
+  and what it shows can be exported as a PDF (see
+  `RisitiApp.Transactions.Report`), which opens in the phone's PDF viewer to
+  read, print or share.
   """
 
   use Mob.Screen
@@ -24,12 +29,13 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
   alias RisitiApp.{Accounts, Api, Native, Push, Sync, Theme, Transactions}
   alias RisitiApp.Components.{ActionButton, Header, TransactionItem}
   alias RisitiApp.Receipts.Photos
-  alias RisitiApp.Transactions.{Attachment, Attachments, Transaction}
+  alias RisitiApp.Transactions.{Attachment, Attachments, Report, Transaction}
 
   alias RisitiApp.Accounts.Profile
 
   alias RisitiApp.Screens.{
     ApprovalsScreen,
+    DateRangeScreen,
     PhoneScreen,
     ReceiptFormScreen,
     RequestFormScreen,
@@ -39,6 +45,7 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
   # The month picker offers this many months back from today.
   @months 12
   @month_actions Map.new(0..(@months - 1), &{:"month_#{&1}", &1})
+  @period_actions Map.new(Transactions.periods(), &{:"period_#{&1}", &1})
 
   @impl Mob.Screen
   def mount(_params, _session, socket) do
@@ -49,6 +56,8 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
       |> Mob.Socket.assign(:profile, profile)
       |> Mob.Socket.assign(:query, "")
       |> Mob.Socket.assign(:group, :all)
+      |> Mob.Socket.assign(:period, :all_dates)
+      |> Mob.Socket.assign(:exporting, false)
       |> Mob.Socket.assign(:searching, false)
       # KRA checks in flight, receipt id => :tap (the user asked, so say how
       # it went) or :background (quiet). `tried` stops a background check
@@ -159,7 +168,9 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
         <Spacer size={14} />
       </Column>
       {chips(@group, @summary.count, Profile.personal?(@profile))}
-      <Spacer size={14} />
+      <Spacer size={10} />
+      {list_tools(@period, @items != [], @exporting)}
+      <Spacer size={12} />
       <Row fill_width={true} padding_left={22} padding_right={22} padding_bottom={8}>
         <Text
           text={list_title(@group)}
@@ -177,7 +188,7 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
       </Row>
       <Text
         :if={@items == []}
-        text={empty_text(@query, @group)}
+        text={empty_text(@query, @group, @period)}
         text_color={:muted}
         text_size={14}
         padding_left={22}
@@ -339,6 +350,68 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
     </Row>
     """
   end
+
+  # The date filter, and the PDF of what the list shows.
+  defp list_tools(period, any?, exporting?) do
+    ~MOB"""
+    <Row fill_width={true} align={:center} padding_left={18} padding_right={18}>
+      <Row
+        background={if(period == :all_dates, do: :surface, else: :on_background)}
+        border_color={if(period == :all_dates, do: :border, else: :on_background)}
+        border_width={1}
+        corner_radius={:radius_pill}
+        padding_left={10}
+        padding_right={8}
+        padding_top={6}
+        padding_bottom={6}
+        align={:center}
+        on_tap={{self(), :pick_period}}
+        accessibility_label={"Dates: #{Transactions.period_label(period)}. Change dates"}
+        accessibility_role={:button}
+      >
+        <Icon name="calendar" text_size={15} text_color={pill_text(period)} />
+        <Spacer size={6} />
+        <Text
+          text={Transactions.period_label(period)}
+          text_size={13}
+          font_weight="medium"
+          text_color={pill_text(period)}
+          max_lines={1}
+        />
+        <Spacer size={2} />
+        <Icon name="expand_more" text_size={16} text_color={pill_text(period)} />
+      </Row>
+      <Spacer weight={1} />
+      <Row
+        :if={any?}
+        background={:surface}
+        border_color={:border}
+        border_width={1}
+        corner_radius={:radius_pill}
+        padding_left={10}
+        padding_right={12}
+        padding_top={6}
+        padding_bottom={6}
+        align={:center}
+        on_tap={{self(), :export_pdf}}
+        accessibility_label="Export these transactions as a PDF"
+        accessibility_role={:button}
+      >
+        <Icon name="download" text_size={15} text_color={:on_surface} />
+        <Spacer size={6} />
+        <Text
+          text={if(exporting?, do: "Making PDF…", else: "PDF")}
+          text_size={13}
+          font_weight="medium"
+          text_color={:on_surface}
+        />
+      </Row>
+    </Row>
+    """
+  end
+
+  defp pill_text(:all_dates), do: :on_surface
+  defp pill_text(_period), do: :background
 
   # Scan receipt, scan QR, add by hand.
   defp dock do
@@ -656,6 +729,79 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
      socket
      |> Mob.Socket.assign(:month, month)
      |> load_receipts()}
+  end
+
+  # ── Date filter and PDF ─────────────────────────────────────────────────────
+
+  def handle_info({:tap, :pick_period}, socket) do
+    presets =
+      Enum.map(Transactions.periods(), fn period ->
+        [label: Transactions.period_label(period), action: :"period_#{period}"]
+      end)
+
+    {:noreply,
+     Mob.Alert.action_sheet(socket,
+       title: "Show transactions for",
+       buttons:
+         presets ++
+           [[label: "Choose dates…", action: :choose_dates], [label: "Cancel", style: :cancel]]
+     )}
+  end
+
+  def handle_info({:alert, action}, socket) when is_map_key(@period_actions, action) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:period, Map.fetch!(@period_actions, action))
+     |> load_receipts()}
+  end
+
+  # Starts from the dates showing now, so a preset can be adjusted.
+  def handle_info({:alert, :choose_dates}, socket) do
+    {from, to} = Transactions.date_range(socket.assigns.period)
+
+    {:noreply,
+     Mob.Socket.push_screen(socket, DateRangeScreen, %{from: from, to: to, notify: self()})}
+  end
+
+  def handle_info({:dates_chosen, from, to}, socket) do
+    period = if from == nil and to == nil, do: :all_dates, else: {:dates, from, to}
+
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:period, period)
+     |> load_receipts()}
+  end
+
+  def handle_info({:tap, :export_pdf}, %{assigns: %{exporting: true}} = socket),
+    do: {:noreply, socket}
+
+  def handle_info({:tap, :export_pdf}, %{assigns: %{items: []}} = socket),
+    do: {:noreply, Native.toast(socket, "Nothing to export")}
+
+  def handle_info({:tap, :export_pdf}, socket) do
+    %{profile: profile, items: items, period: period, group: group, query: query} =
+      socket.assigns
+
+    scope = %{period: period, filter: filter_label(group), search: query}
+
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:exporting, true)
+     |> Native.background(:pdf_written, fn -> Report.write(profile, items, scope) end)}
+  end
+
+  def handle_info({:pdf_written, {:ok, path}}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:exporting, false)
+     |> Native.open_file(path)}
+  end
+
+  def handle_info({:pdf_written, {:error, _reason}}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:exporting, false)
+     |> Native.toast("Couldn't make the PDF — check your phone has free space")}
   end
 
   def handle_info({:tap, :open_approvals}, socket) do
@@ -1057,12 +1203,14 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
   end
 
   defp load_receipts(socket) do
-    %{profile: profile, query: query, group: group, month: month} = socket.assigns
+    %{profile: profile, query: query, group: group, period: period, month: month} =
+      socket.assigns
+
     sync = Profile.connected?(profile)
     personal = Profile.personal?(profile)
 
     socket
-    |> Mob.Socket.assign(:items, Transactions.list_transactions(profile, query, group))
+    |> Mob.Socket.assign(:items, Transactions.list_transactions(profile, query, group, period))
     |> Mob.Socket.assign(:summary, Transactions.summary(profile, month))
     |> Mob.List.put_renderer(:receipts, &list_item(&1, sync, personal))
   end
@@ -1092,6 +1240,10 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
 
   defp verified_message(_receipt, _details), do: "Verified with KRA"
 
+  defp filter_label(:all), do: nil
+  defp filter_label(:claims), do: "Refunds and payments"
+  defp filter_label(group), do: Transactions.group_label(group)
+
   defp list_title(:all), do: "Transactions"
   defp list_title(:claims), do: "Refunds and payments"
   defp list_title(group), do: Transactions.group_label(group)
@@ -1102,6 +1254,14 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
   # "Ksh 1,205" without the currency, for the small split cells.
   defp bare_amount(cents),
     do: cents |> Transactions.format_short() |> String.replace_prefix("Ksh ", "")
+
+  defp empty_text("", _group, {:dates, _, _} = period),
+    do: "Nothing for #{Transactions.period_label(period)}."
+
+  defp empty_text("", _group, period) when period != :all_dates,
+    do: "Nothing for #{String.downcase(Transactions.period_label(period))}."
+
+  defp empty_text(query, group, _period), do: empty_text(query, group)
 
   defp empty_text("", :all),
     do:
