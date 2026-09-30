@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Risiti brand green: the icon's background and the splash screen. -->
-    <color name="risiti_green">#1F6B4A</color>
+    <!-- The Risiti logo's teal gradient (risiti_logo.svg), and its middle
+         for the splash screens, which need one colour. -->
+    <color name="risiti_teal_top">#2A4F4A</color>
+    <color name="risiti_teal_bottom">#0F2622</color>
+    <color name="risiti_teal">#1C3A36</color>
 </resources>

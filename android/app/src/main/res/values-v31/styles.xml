@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Android 12+ always shows the system splash first: the icon on the
-         brand green, then the window's own splash until the first screen. -->
+         logo teal, then the window's own splash until the first screen. -->
     <style name="AppTheme" parent="android:style/Theme.NoTitleBar">
-        <item name="android:windowSplashScreenBackground">@color/risiti_green</item>
+        <item name="android:windowSplashScreenBackground">@color/risiti_teal</item>
         <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
         <item name="android:windowBackground">@drawable/splash</item>
         <item name="android:windowAnimationStyle">@null</item>
