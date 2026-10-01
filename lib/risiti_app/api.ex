@@ -164,24 +164,6 @@ defmodule RisitiApp.Api do
 
   def list_transactions(profile), do: call(:get, "/api/transactions", profile) |> ok_body()
 
-  # ── Reading receipts with AI ──────────────────────────────────────────────
-
-  @doc """
-  Asks the server to read a receipt photo with AI (risiti's
-  `RisitiWeb.Api.ReceiptsController`), charged to the team's AI credits.
-  `{:ok, fields}` with string keys, or `{:error, {:not_used, message}}` when
-  the team can't use AI now (`message` may be nil), or another error.
-  """
-  def read_receipt(%Profile{} = profile, photo_path) do
-    photo = {"photo", {:file, photo_path, Path.basename(photo_path), "image/jpeg"}}
-
-    case call(:post, "/api/receipts/read", profile, {:multipart, [photo]}) do
-      {:ok, 200, %{"fields" => fields}} when is_map(fields) -> {:ok, fields}
-      {:ok, 409, body} when is_map(body) -> {:error, {:not_used, body["message"]}}
-      other -> ok_body(other)
-    end
-  end
-
   # ── Approvers ──────────────────────────────────────────────────────────────
 
   @doc "What waits for a decision, and approved claims waiting to be paid."
