@@ -127,27 +127,6 @@ defmodule RisitiApp.Screens.PhotoFlowTest do
       assert assigns(view).notice == "Your team has used its AI credits."
     end
 
-    test "the fields the AI filled are marked until edited, and it reads again on tap" do
-      connect()
-      FakeServer.stub(fn _ -> {200, %{"fields" => @ai_fields}} end)
-
-      {view, dest} = start_photo_form()
-      view = view |> render_info(ocr_reply(dest, "blurry")) |> ai_reply()
-
-      assert assigns(view).ai_filled ==
-               MapSet.new([:date, :vendor, :description, :amount, :category])
-
-      assert_renderable(view, extra: [:header, :icon])
-
-      view = render_info(view, {:change, :vendor, "Mama Mboga"})
-      refute :vendor in assigns(view).ai_filled
-
-      view = view |> render_info({:tap, :ai_read}) |> ai_reply()
-      assert_received {:http, :post, "/api/receipts/read", _}
-      assert assigns(view).vendor == "Mama Mboga"
-      refute :vendor in assigns(view).ai_filled
-    end
-
     test "a book that isn't connected doesn't ask" do
       {view, dest} = start_photo_form()
       render_info(view, ocr_reply(dest, @ocr_text))

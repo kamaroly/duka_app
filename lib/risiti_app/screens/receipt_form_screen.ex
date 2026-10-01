@@ -25,9 +25,7 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
   In a book connected to a team, the photo is then also read by the
   server's AI (`Api.read_receipt/2`), which reads more reliably and picks a
   category; it's charged to the team's AI credits. Offline, out of credits
-  or with AI off, the phone's own reading is all there is. The fields it
-  filled show a sparkle and "AI" until the user edits them, and "Read with
-  AI" reads the photo again.
+  or with AI off, the phone's own reading is all there is.
   """
 
   use Mob.Screen
@@ -76,8 +74,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
       |> Mob.Socket.assign(:ai_reading, nil)
       # True once the user picked a category, which the AI then leaves alone.
       |> Mob.Socket.assign(:category_picked, false)
-      # Fields the AI filled that the user hasn't changed since.
-      |> Mob.Socket.assign(:ai_filled, MapSet.new())
       |> Mob.Socket.assign(:notice, nil)
       |> Mob.Socket.assign(:pending_camera, nil)
       |> Mob.Socket.assign(:errors, %{})
@@ -120,7 +116,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
             label: "Date on receipt",
             key: :date,
             value: @date,
-            ai: :date in @ai_filled,
             placeholder: "YYYY-MM-DD, e.g. 2026-09-23",
             hint: "Year-month-day, as printed on the receipt.",
             error: @errors[:date]
@@ -129,7 +124,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
             label: "Vendor (shop or business name)",
             key: :vendor,
             value: @vendor,
-            ai: :vendor in @ai_filled,
             placeholder: "e.g. Naivas Westlands",
             error: @errors[:vendor]
           )}
@@ -137,7 +131,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
             label: "Description (optional)",
             key: :description,
             value: @description,
-            ai: :description in @ai_filled,
             placeholder: "e.g. Office stationery",
             hint: "What you bought, so you can find it later.",
             error: @errors[:description]
@@ -146,14 +139,13 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
             label: "Amount paid (Ksh)",
             key: :amount,
             value: @amount,
-            ai: :amount in @ai_filled,
             placeholder: "e.g. 1,250.50",
             keyboard: :decimal,
             hint: "The total on the receipt, including VAT.",
             error: @errors[:amount]
           )}
           <Column fill_width={true} padding_bottom={12}>
-            {FormField.label("Category", :category in @ai_filled)}
+            <Text text="Category" text_size={13} font_weight="medium" text_color={:on_background} />
             <Spacer size={6} />
             <Row
               fill_width={true}
@@ -234,14 +226,7 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
   end
 
   defp photo_section(%{receipt: receipt} = assigns) do
-    assigns =
-      assigns
-      |> Map.put(:ai_line, assigns[:ai_reading] == receipt.photo_path)
-      # Reading again is for a connected book, once the AI isn't busy.
-      |> Map.put(
-        :ai_button,
-        is_nil(assigns[:ai_reading]) and Accounts.Profile.connected?(assigns[:profile])
-      )
+    assigns = Map.put(assigns, :ai_line, assigns[:ai_reading] == receipt.photo_path)
 
     ~MOB"""
     <Column fill_width={true}>
@@ -249,8 +234,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
       <Spacer size={8} />
       <Text :if={@ai_line} text="Reading it with AI…" text_size={12} text_color={:muted} />
       <Spacer :if={@ai_line} size={8} />
-      {if @ai_button, do: ActionButton.button("sparkles", "Read with AI", :ai_read, style: :secondary)}
-      <Spacer :if={@ai_button} size={8} />
       <Row fill_width={true}>
         {ActionButton.button("camera", "Retake", :take_photo, style: :secondary, weight: 1)}
         <Spacer size={8} />
@@ -342,7 +325,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
      socket
      |> Mob.Socket.assign(key, value)
      |> Mob.Socket.assign(:touched, MapSet.put(socket.assigns.touched, key))
-     |> Mob.Socket.assign(:ai_filled, MapSet.delete(socket.assigns.ai_filled, key))
      |> Mob.Socket.assign(:errors, Map.delete(socket.assigns.errors, key))}
   end
 
@@ -363,8 +345,7 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
     {:noreply,
      socket
      |> Mob.Socket.assign(:category, Map.fetch!(@category_actions, action))
-     |> Mob.Socket.assign(:category_picked, true)
-     |> Mob.Socket.assign(:ai_filled, MapSet.delete(socket.assigns.ai_filled, :category))}
+     |> Mob.Socket.assign(:category_picked, true)}
   end
 
   # ── Camera: photo and QR ────────────────────────────────────────────────────
@@ -472,10 +453,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
       |> fill_untouched(details, MapSet.new())
       |> Mob.Socket.assign(:from_kra, MapSet.union(socket.assigns.from_kra, MapSet.new(filled)))
       |> Mob.Socket.assign(
-        :ai_filled,
-        MapSet.difference(socket.assigns.ai_filled, MapSet.new(filled))
-      )
-      |> Mob.Socket.assign(
         :notice,
         "Verified with KRA and filled in from its record of this receipt. " <>
           "Check the details and pick a category."
@@ -507,8 +484,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
         fields = ai_fields(json)
         kra? = socket.assigns.from_kra != MapSet.new()
 
-        marked = ai_marks(socket, fields)
-
         socket =
           socket
           |> update_receipt(fn r ->
@@ -520,7 +495,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
           end)
           |> fill_untouched(fields, socket.assigns.from_kra)
           |> fill_category(fields.category)
-          |> Mob.Socket.assign(:ai_filled, MapSet.union(socket.assigns.ai_filled, marked))
 
         notice =
           if kra?,
@@ -537,9 +511,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
         {:noreply, socket}
     end
   end
-
-  def handle_info({:tap, :ai_read}, socket),
-    do: {:noreply, socket |> Mob.Socket.assign(:notice, nil) |> ai_read()}
 
   def handle_info({:tap, :remove_photo}, socket) do
     socket = replace_photo(socket, nil)
@@ -689,24 +660,6 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
     }
   end
 
-  # The fields the AI's answer fills: those with a value that the user
-  # hasn't typed in and KRA didn't fill, and its category when it's used.
-  defp ai_marks(socket, fields) do
-    skip = MapSet.union(socket.assigns.touched, socket.assigns.from_kra)
-
-    text =
-      [date: :date, vendor: :vendor, description: :description, amount: :amount_cents]
-      |> Enum.filter(fn {field, key} -> fields[key] && not MapSet.member?(skip, field) end)
-      |> Enum.map(&elem(&1, 0))
-
-    category =
-      if fields.category in @categories and not socket.assigns.category_picked,
-        do: [:category],
-        else: []
-
-    MapSet.new(text ++ category)
-  end
-
   # The AI's category, when it's one of the app's and the user hasn't picked.
   defp fill_category(socket, category) do
     if category in @categories and not socket.assigns.category_picked,
@@ -719,7 +672,7 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
     notice = if socket.assigns.from_kra == MapSet.new(), do: nil, else: socket.assigns.notice
 
     socket
-    |> Mob.Socket.assign(reading: true, notice: notice, ai_filled: MapSet.new())
+    |> Mob.Socket.assign(reading: true, notice: notice)
     |> Native.process_photo(tmp, Photos.new_path())
   end
 

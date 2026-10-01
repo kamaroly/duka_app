@@ -139,7 +139,6 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Store
@@ -3702,7 +3701,6 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "cloud_done"      -> Icons.Filled.CloudDone
         "cloud_upload"    -> Icons.Filled.CloudUpload
         "calendar"        -> Icons.Filled.DateRange
-        "sparkles"        -> Icons.Filled.AutoAwesome
         else              -> Icons.Filled.QuestionMark
     }
 
