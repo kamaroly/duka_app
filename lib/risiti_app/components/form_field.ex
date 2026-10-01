@@ -16,6 +16,9 @@ defmodule RisitiApp.Components.FormField do
         error: @errors[:amount]
       )
 
+  `ai: true` marks the field as filled in by AI (a sparkle and "AI" after
+  the label), until the user edits it.
+
   `on_change` fires as `{:change, key, value}` in the screen. Pass
   `submit: tag` to also get `{:submit, tag}` when the keyboard's return key is
   pressed.
@@ -32,10 +35,11 @@ defmodule RisitiApp.Components.FormField do
     keyboard = Keyword.get(opts, :keyboard, :default)
     hint = Keyword.get(opts, :hint)
     error = Keyword.get(opts, :error)
+    ai = Keyword.get(opts, :ai, false)
 
     ~MOB"""
     <Column fill_width={true} padding_bottom={12}>
-      <Text text={label} text_size={13} font_weight="medium" text_color={:on_background} />
+      {label(label, ai)}
       <Spacer size={6} />
       <Box
         background={:surface}
@@ -63,6 +67,26 @@ defmodule RisitiApp.Components.FormField do
     </Column>
     """
     |> put_submit(Keyword.get(opts, :submit))
+  end
+
+  @doc """
+  A field's label; with `ai`, followed by a sparkle and "AI", saying the AI
+  filled the field in.
+  """
+  @spec label(String.t(), boolean()) :: map()
+  def label(text, false),
+    do: ~MOB(<Text text={text} text_size={13} font_weight="medium" text_color={:on_background} />)
+
+  def label(text, true) do
+    ~MOB"""
+    <Row align={:center} accessibility_label={text <> ", filled in by AI"}>
+      <Text text={text} text_size={13} font_weight="medium" text_color={:on_background} />
+      <Spacer size={6} />
+      <Icon name="sparkles" text_size={13} text_color={:secondary} />
+      <Spacer size={2} />
+      <Text text="AI" text_size={11} font_weight="semibold" text_color={:secondary} />
+    </Row>
+    """
   end
 
   defp put_submit(node, nil), do: node
