@@ -46,6 +46,94 @@ defmodule RisitiApp.Screens.PhotoFlowTest do
     assert nav_action(view) == {:push, ReceiptFormScreen, %{photo: "/cache/mob_cam_1.jpg"}}
   end
 
+  describe "reading with the server's AI" do
+    alias RisitiApp.FakeServer
+
+    @ai_fields %{
+      "vendor" => "Naivas Westlands",
+      "date" => "2026-09-21",
+      "amount_cents" => 245_000,
+      "description" => "Groceries",
+      "seller_pin" => "P051234567X",
+      "invoice_number" => "0040123",
+      "category" => "Food & Groceries"
+    }
+
+    defp connect do
+      {:ok, _profile} =
+        Accounts.connect("0712345678", %{
+          "token" => "tok-1",
+          "user" => %{"id" => "u-1", "team" => "acme", "team_kind" => "business"}
+        })
+    end
+
+    defp ai_reply(view) do
+      assert_received {:ai, result}
+      render_info(view, {:ai, result})
+    end
+
+    test "a connected book sends the photo to the AI, which fills what the phone missed" do
+      connect()
+
+      FakeServer.stub(fn {:post, "/api/receipts/read", _} -> {200, %{"fields" => @ai_fields}} end)
+
+      {view, dest} = start_photo_form()
+      view = render_info(view, ocr_reply(dest, "blurry"))
+
+      assert_received {:http, :post, "/api/receipts/read", %{body: body}}
+      assert %{"photo" => {:file, _name}} = FakeServer.multipart_fields(body)
+
+      view = ai_reply(view)
+
+      assert %{
+               vendor: "Naivas Westlands",
+               date: "2026-09-21",
+               amount: "2450.00",
+               category: "Food & Groceries"
+             } = assigns(view)
+
+      assert assigns(view).notice =~ "Read with AI"
+      assert assigns(view).receipt.seller_pin == "P051234567X"
+    end
+
+    test "what the user typed or picked stays" do
+      connect()
+      FakeServer.stub(fn _ -> {200, %{"fields" => @ai_fields}} end)
+
+      {view, dest} = start_photo_form()
+
+      view =
+        view
+        |> render_info({:change, :vendor, "Mama Mboga"})
+        |> render_info({:alert, :category_2})
+        |> render_info(ocr_reply(dest, "blurry"))
+        |> ai_reply()
+
+      assert assigns(view).vendor == "Mama Mboga"
+      assert assigns(view).category == "Transport"
+    end
+
+    test "out of credits, the phone's reading stays and the user is told why" do
+      connect()
+
+      FakeServer.stub(fn _ ->
+        {409, %{"reason" => "no_credits", "message" => "Your team has used its AI credits."}}
+      end)
+
+      {view, dest} = start_photo_form()
+      view = view |> render_info(ocr_reply(dest, @ocr_text)) |> ai_reply()
+
+      assert assigns(view).amount == "2450.00"
+      assert assigns(view).notice == "Your team has used its AI credits."
+    end
+
+    test "a book that isn't connected doesn't ask" do
+      {view, dest} = start_photo_form()
+      render_info(view, ocr_reply(dest, @ocr_text))
+      refute_received {:http, :post, "/api/receipts/read", _}
+    end
+  end
+
   describe "KRA lookup" do
     @kra_details %{
       vendor: "Stabex International Limited",

@@ -21,11 +21,16 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
   form fetches it in the background and fills the vendor, date, total and
   items from it. Details from KRA or read off a photo only fill fields the
   user hasn't typed in, and a photo read never overwrites what KRA said.
+
+  In a book connected to a team, the photo is then also read by the
+  server's AI (`Api.read_receipt/2`), which reads more reliably and picks a
+  category; it's charged to the team's AI credits. Offline, out of credits
+  or with AI off, the phone's own reading is all there is.
   """
 
   use Mob.Screen
 
-  alias RisitiApp.{Accounts, Native, Transactions}
+  alias RisitiApp.{Accounts, Api, Native, Transactions}
   alias RisitiApp.Components.{ActionButton, FormField, KraBadge}
   alias RisitiApp.Receipts.{OcrParser, Photos, QrParser}
   alias RisitiApp.Transactions.Transaction
@@ -65,6 +70,10 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
       # Fields filled from KRA's record, which a photo read must not overwrite.
       |> Mob.Socket.assign(:from_kra, MapSet.new())
       |> Mob.Socket.assign(:reading, false)
+      # The photo the server's AI is reading, while it reads it.
+      |> Mob.Socket.assign(:ai_reading, nil)
+      # True once the user picked a category, which the AI then leaves alone.
+      |> Mob.Socket.assign(:category_picked, false)
       |> Mob.Socket.assign(:notice, nil)
       |> Mob.Socket.assign(:pending_camera, nil)
       |> Mob.Socket.assign(:errors, %{})
@@ -216,11 +225,15 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
     ActionButton.button("camera", "Add receipt photo", :take_photo, style: :secondary)
   end
 
-  defp photo_section(%{receipt: receipt}) do
+  defp photo_section(%{receipt: receipt} = assigns) do
+    assigns = Map.put(assigns, :ai_line, assigns[:ai_reading] == receipt.photo_path)
+
     ~MOB"""
     <Column fill_width={true}>
       {photo_preview(receipt.photo_path)}
       <Spacer size={8} />
+      <Text :if={@ai_line} text="Reading it with AI…" text_size={12} text_color={:muted} />
+      <Spacer :if={@ai_line} size={8} />
       <Row fill_width={true}>
         {ActionButton.button("camera", "Retake", :take_photo, style: :secondary, weight: 1)}
         <Spacer size={8} />
@@ -329,7 +342,10 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
   end
 
   def handle_info({:alert, action}, socket) when is_map_key(@category_actions, action) do
-    {:noreply, Mob.Socket.assign(socket, :category, Map.fetch!(@category_actions, action))}
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:category, Map.fetch!(@category_actions, action))
+     |> Mob.Socket.assign(:category_picked, true)}
   end
 
   # ── Camera: photo and QR ────────────────────────────────────────────────────
@@ -387,7 +403,7 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
         do: ocr_notice(fields, socket.assigns),
         else: socket.assigns.notice
 
-    {:noreply, Mob.Socket.assign(socket, :notice, notice)}
+    {:noreply, socket |> Mob.Socket.assign(:notice, notice) |> ai_read()}
   end
 
   def handle_info({:ocr, :error, json}, socket) do
@@ -453,6 +469,47 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
        "Couldn't get this receipt from KRA — check your internet connection. " <>
          "Fill in the details from the paper receipt."
      )}
+  end
+
+  def handle_info({:ai, {name, result}}, socket) do
+    socket = Mob.Socket.assign(socket, :ai_reading, nil)
+
+    cond do
+      # A photo taken since, or removed: this answer is for an old one.
+      socket.assigns.receipt.photo_path != name ->
+        {:noreply, socket}
+
+      match?({:ok, _fields}, result) ->
+        {:ok, json} = result
+        fields = ai_fields(json)
+        kra? = socket.assigns.from_kra != MapSet.new()
+
+        socket =
+          socket
+          |> update_receipt(fn r ->
+            %{
+              r
+              | seller_pin: r.seller_pin || fields.seller_pin,
+                invoice_number: r.invoice_number || fields.invoice_number
+            }
+          end)
+          |> fill_untouched(fields, socket.assigns.from_kra)
+          |> fill_category(fields.category)
+
+        notice =
+          if kra?,
+            do: socket.assigns.notice,
+            else: "Read with AI. Check the details against the receipt."
+
+        {:noreply, Mob.Socket.assign(socket, :notice, notice)}
+
+      match?({:error, {:not_used, message}} when is_binary(message), result) ->
+        {:error, {:not_used, message}} = result
+        {:noreply, Mob.Socket.assign(socket, :notice, message)}
+
+      true ->
+        {:noreply, socket}
+    end
   end
 
   def handle_info({:tap, :remove_photo}, socket) do
@@ -563,6 +620,51 @@ defmodule RisitiApp.Screens.ReceiptFormScreen do
     socket
     |> Mob.Socket.assign(:pending_camera, :take_photo)
     |> Native.request_camera()
+  end
+
+  # In a book connected to a team, asks the server's AI to read the photo
+  # too. Its answer comes back as `{:ai, {photo_name, result}}`.
+  defp ai_read(%{assigns: %{profile: profile, receipt: %{photo_path: name}}} = socket)
+       when is_binary(name) do
+    path = Photos.path(name)
+
+    if Accounts.Profile.connected?(profile) and is_binary(path) and File.regular?(path) do
+      socket
+      |> Mob.Socket.assign(:ai_reading, name)
+      |> Native.background(:ai, fn -> {name, Api.read_receipt(profile, path)} end)
+    else
+      socket
+    end
+  end
+
+  defp ai_read(socket), do: socket
+
+  # The server's answer, as the phone's parsers give theirs.
+  defp ai_fields(json) do
+    date =
+      case Date.from_iso8601(json["date"] || "") do
+        {:ok, date} -> date
+        _none -> nil
+      end
+
+    cents = json["amount_cents"]
+
+    %{
+      vendor: json["vendor"],
+      date: date,
+      amount_cents: if(is_integer(cents) and cents > 0, do: cents),
+      description: json["description"],
+      seller_pin: json["seller_pin"],
+      invoice_number: json["invoice_number"],
+      category: json["category"]
+    }
+  end
+
+  # The AI's category, when it's one of the app's and the user hasn't picked.
+  defp fill_category(socket, category) do
+    if category in @categories and not socket.assigns.category_picked,
+      do: Mob.Socket.assign(socket, :category, category),
+      else: socket
   end
 
   # What KRA said stays on show while the photo is read.
