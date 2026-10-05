@@ -356,7 +356,8 @@ defmodule RisitiApp.Screens.SettingsScreen do
 
   def handle_info({:tap, :header_back}, socket) do
     # Reset rather than pop so the list picks up a changed name or lock setting.
-    {:noreply, Mob.Socket.reset_to(socket, RisitiApp.Screens.ReceiptsScreen, %{}, transition: :pop)}
+    {:noreply,
+     Mob.Socket.reset_to(socket, RisitiApp.Screens.ReceiptsScreen, %{}, transition: :pop)}
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}
