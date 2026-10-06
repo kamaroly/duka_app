@@ -25,6 +25,13 @@ They're scaled to 540 px wide.
   props removed, on purpose, to show the bug Chapter 6 explains.
 - **The permission dialog** in `14-camera-permission.png` is the real one;
   "Only this time" was chosen.
+- **Chapter 18's data**: the receipts from Chapters 13 to 15, plus five
+  more (four in September), all added over distribution. The Team lunch was
+  turned into a refund with `request_refund/2`, and the decisions were made
+  with `decide/3`: the 4 Oct Naivas and TotalEnergies approved, the 3 Oct
+  Naivas rejected as a duplicate, Safaricom rejected. The month picker and
+  search were opened with `Mob.Test.tap/2`, "java" typed with
+  `adb shell input text`.
 - **Sample receipts** for Chapters 13 to 15 were added on the phone over
   Erlang distribution with `RisitiApp.Transactions.create_transaction/1`, as
   Chapter 12 shows.
