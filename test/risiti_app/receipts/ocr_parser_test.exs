@@ -87,6 +87,11 @@ defmodule RisitiApp.Receipts.OcrParserTest do
     assert %{vendor: "Mama Oliech Restaurant"} = OcrParser.parse(text, today: @today)
   end
 
+  test "strips the decoration printed around a name" do
+    assert %{vendor: "Rubis Energy"} = OcrParser.parse("* RUBIS ENERGY *", today: @today)
+    assert %{vendor: "Naivas"} = OcrParser.parse("== NAIVAS ==", today: @today)
+  end
+
   test "keeps short all-caps words like KFC as they are" do
     assert %{vendor: "KFC Junction Mall"} = OcrParser.parse("KFC JUNCTION MALL", today: @today)
   end

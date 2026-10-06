@@ -194,7 +194,13 @@ defmodule RisitiApp.Receipts.OcrParser do
   end
 
   defp tidy_vendor(line) do
-    line = line |> String.replace(~r/\s{2,}/, " ") |> String.trim(" *-=")
+    # Decoration around the name: "* RUBIS ENERGY *", "== NAIVAS ==".
+    # (String.trim/2 would remove the exact string " *-=", not those
+    # characters, so a regex does it.)
+    line =
+      line
+      |> String.replace(~r/\s{2,}/, " ")
+      |> String.replace(~r/^[\s*=-]+|[\s*=-]+$/, "")
 
     if line == String.upcase(line) do
       line
