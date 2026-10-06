@@ -53,7 +53,7 @@ whole phone app.
 | 18 | [The Home Screen, Finished](18-the-home-screen-finished.md): search, the month picker, date ranges, the details sheet | written |
 | 19 | [Reading a Receipt](19-reading-a-receipt.md): on-device OCR and a parser for messy receipt text | written |
 | 20 | [KRA Receipts](20-kra-receipts.md): scanning eTIMS and TIMS QR codes and trusting KRA's record | written |
-| 21 | [Refunds, Payment Requests and Attachments](21-refunds-payments-and-attachments.md): one transaction, three types | plan |
+| 21 | [Refunds, Payment Requests and Attachments](21-refunds-payments-and-attachments.md): one transaction, three types | written |
 | 22 | [Writing a Native Plugin](22-writing-a-native-plugin.md): `mob_google` from scratch, Elixir to Zig to Kotlin and back | plan |
 | 23 | [A PDF on the Phone](23-a-pdf-on-the-phone.md): exporting what the list shows as a printable report | plan |
 
