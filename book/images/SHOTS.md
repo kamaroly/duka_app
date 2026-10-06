@@ -17,6 +17,7 @@ They're scaled to 540 px wide.
 | `20-sheet-verified.png` | 20 | The sheet of a verified KRA receipt: "Verified with KRA · date", PIN, receipt number, View on KRA. | After saving the receipt above. |
 | `21-request-form.png` | 21 | The request form: 12,500 to Kamau Hardware for cement, A supplier, Till 832909, one PDF attachment. | `code/21`. Push a small PDF into the app's cache with `run-as` and send `{:files, :picked, [%{path: ..., name: "Quotation.pdf", mime: "application/pdf", size: n}]}`. |
 | `21-refund-form.png` | 21 | The refund form for the Java House expense, with a note and an M-Pesa number. | Open the expense's sheet, tap Request refund. |
+| `23-report-on-phone.png` | 23 | The report open in the phone's PDF viewer (last month, September's data). | `code/23`: date pill → Last month, tap PDF. Also confirms `Native.open_file/2` opens a file path on the phone. |
 | `15-fingerprint.png` | 15 | Android's fingerprint prompt over the locked receipts screen. | By hand, with the phone's own screenshot buttons; see the comment in Chapter 15. |
 
 ## Still to run
@@ -45,6 +46,9 @@ They're scaled to 540 px wide.
   Naivas rejected as a duplicate, Safaricom rejected. The month picker and
   search were opened with `Mob.Test.tap/2`, "java" typed with
   `adb shell input text`.
+- **`23-report.png`** isn't a phone screenshot: it's page 1 of a report
+  rendered with `Report.render/3` from sample rows and turned into a PNG
+  with `pdftoppm -r 110`, cropped to the top 42%.
 - **Chapter 19's receipt** is an image made with Pillow
   (`QUICKMART LIMITED`, made-up details, eTIMS layout, tilted 3 degrees on
   a brown background), copied into the app's cache with `run-as` and handed
