@@ -12,6 +12,7 @@ They're scaled to 540 px wide.
 
 | File | Chapter | What it shows | How |
 |---|---|---|---|
+| `19-search-ocr.png` | 19 | Home screen, search open, "kimbo" typed, the Quickmart receipt listed. | `code/19`, after saving the Quickmart receipt. |
 | `15-fingerprint.png` | 15 | Android's fingerprint prompt over the locked receipts screen. | By hand, with the phone's own screenshot buttons; see the comment in Chapter 15. |
 
 ## Notes on what's in the shots
@@ -32,6 +33,11 @@ They're scaled to 540 px wide.
   Naivas rejected as a duplicate, Safaricom rejected. The month picker and
   search were opened with `Mob.Test.tap/2`, "java" typed with
   `adb shell input text`.
+- **Chapter 19's receipt** is an image made with Pillow
+  (`QUICKMART LIMITED`, made-up details, eTIMS layout, tilted 3 degrees on
+  a brown background), copied into the app's cache with `run-as` and handed
+  to the form as `{:camera, :photo, %{path: ...}}`. ML Kit's reading of it
+  on the phone is `code/19/test/fixtures/receipts/quickmart_phone.txt`.
 - **Sample receipts** for Chapters 13 to 15 were added on the phone over
   Erlang distribution with `RisitiApp.Transactions.create_transaction/1`, as
   Chapter 12 shows.
