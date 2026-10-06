@@ -19,6 +19,14 @@ They're scaled to 540 px wide.
 | `21-refund-form.png` | 21 | The refund form for the Java House expense, with a note and an M-Pesa number. | Open the expense's sheet, tap Request refund. |
 | `15-fingerprint.png` | 15 | Android's fingerprint prompt over the locked receipts screen. | By hand, with the phone's own screenshot buttons; see the comment in Chapter 15. |
 
+## Still to run
+
+- **Chapter 22, "Run it"**: the IEx call to `MobGoogle.sign_in/2` on the
+  phone with a made-up client id, from `code/22` (book app in front).
+  Paste Google's error message in place of `"..."` and drop the `RUN`
+  comment. If the call doesn't come back, the `erl_eval` explanation in
+  that section needs another look.
+
 ## Notes on what's in the shots
 
 - **The receipt photo** in `14-form-with-photo.png`, `14-list-with-photo.png`
