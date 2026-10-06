@@ -1229,7 +1229,7 @@ with some text.
     File.mkdir_p!(Path.dirname(dest))
     File.write!(dest, "the upright copy")
 
-    json = IO.iodata_to_binary(:json.encode(%{"text" => text, "qr" => nil, "path" => dest}))
+    json = IO.iodata_to_binary(:json.encode(%{"text" => text, "qr" => :null, "path" => dest}))
     render_info(view, {:ocr, :result, json})
   end
 ```

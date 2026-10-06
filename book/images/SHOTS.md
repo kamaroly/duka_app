@@ -13,6 +13,8 @@ They're scaled to 540 px wide.
 | File | Chapter | What it shows | How |
 |---|---|---|---|
 | `19-search-ocr.png` | 19 | Home screen, search open, "kimbo" typed, the Quickmart receipt listed. | `code/19`, after saving the Quickmart receipt. |
+| `20-form-kra.png` | 20 | The form after a scan, filled in from KRA: the "Verified with KRA" notice, the eTIMS box with PIN and receipt number, vendor, amount. | `code/20`. No real eTIMS link is in the repo (the saved page's signature is blanked), so send the form `{:kra, :result, details}` with the details from `test/fixtures/kra/etims_receipt.html`, as the tests do, and say so here. |
+| `20-sheet-verified.png` | 20 | The sheet of a verified KRA receipt: "Verified with KRA · date", PIN, receipt number, View on KRA. | After saving the receipt above. |
 | `15-fingerprint.png` | 15 | Android's fingerprint prompt over the locked receipts screen. | By hand, with the phone's own screenshot buttons; see the comment in Chapter 15. |
 
 ## Notes on what's in the shots
