@@ -12,8 +12,6 @@ They're scaled to 540 px wide.
 
 | File | Chapter | What it shows | How |
 |---|---|---|---|
-| `19-search-ocr.png` | 19 | Home screen, search open, "kimbo" typed, the Quickmart receipt listed. | `code/19`, after saving the Quickmart receipt. |
-| `20-form-kra.png` | 20 | The form after a scan, filled in from KRA: the "Verified with KRA" notice, the eTIMS box with PIN and receipt number, vendor, amount. | `code/20`. No real eTIMS link is in the repo (the saved page's signature is blanked), so send the form `{:kra, :result, details}` with the details from `test/fixtures/kra/etims_receipt.html`, as the tests do, and say so here. |
 | `20-sheet-verified.png` | 20 | The sheet of a verified KRA receipt: "Verified with KRA · date", PIN, receipt number, View on KRA. | After saving the receipt above. |
 | `21-request-form.png` | 21 | The request form: 12,500 to Kamau Hardware for cement, A supplier, Till 832909, one PDF attachment. | `code/21`. Push a small PDF into the app's cache with `run-as` and send `{:files, :picked, [%{path: ..., name: "Quotation.pdf", mime: "application/pdf", size: n}]}`. |
 | `21-refund-form.png` | 21 | The refund form for the Java House expense, with a note and an M-Pesa number. | Open the expense's sheet, tap Request refund. |
@@ -46,6 +44,16 @@ They're scaled to 540 px wide.
   Naivas rejected as a duplicate, Safaricom rejected. The month picker and
   search were opened with `Mob.Test.tap/2`, "java" typed with
   `adb shell input text`.
+- **`19-search-ocr.png`** was taken from the `code/23` build, so it also
+  shows two later-chapter controls: the Refunds & payments pill and the
+  PDF button.
+- **`20-form-kra.png`**: the form was opened by sending the home screen
+  `{:scan, :result, ...}` with an eTIMS link built from the seller PIN in
+  `test/fixtures/kra/etims_receipt.html` and a made-up signature. The real
+  KRA lookup ran on the phone (HTTPS, certificates, DNS all fine) and KRA
+  answered "no record", as it should for a made-up code. KRA's record was
+  then handed to the form as `{:kra, :result, details}` with the details
+  from the saved Stabex page, as the tests do.
 - **`23-report.png`** isn't a phone screenshot: it's page 1 of a report
   rendered with `Report.render/3` from sample rows and turned into a PNG
   with `pdftoppm -r 110`, cropped to the top 42%.
