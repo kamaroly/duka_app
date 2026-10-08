@@ -88,13 +88,23 @@ defmodule RisitiApp.Native do
   def pick_files(socket),
     do: call(socket, :pick_files, [], &Mob.Files.pick(&1, types: [:images, :pdf]))
 
-  @doc "Opens a file from the app's storage in the phone's own viewer (PDF reader, gallery)."
+  @doc """
+  Opens a file from the app's storage in the phone's own viewer (PDF reader,
+  gallery). Replies `{:viewer, :error, json}` only if it can't — see
+  `MobViewer`. (`Mob.Device.open_url/1` with a path opens nothing on
+  Android: no app handles a bare path, and none may read our storage.)
+  """
   @spec open_file(Mob.Socket.t(), String.t()) :: Mob.Socket.t()
-  def open_file(socket, path) do
-    call(socket, :open_file, [path], fn socket ->
-      Mob.Device.open_url(path)
-      socket
-    end)
+  def open_file(socket, path),
+    do: call(socket, :open_file, [path], &MobViewer.view(&1, path, mime_type(path)))
+
+  defp mime_type(path) do
+    case path |> Path.extname() |> String.downcase() do
+      ".pdf" -> "application/pdf"
+      ".png" -> "image/png"
+      ext when ext in [".jpg", ".jpeg"] -> "image/jpeg"
+      _ -> "*/*"
+    end
   end
 
   @doc """

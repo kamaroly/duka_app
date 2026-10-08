@@ -349,6 +349,10 @@ defmodule RisitiApp.Screens.ApprovalsScreen do
 
   def handle_info({:tap, :header_back}, socket), do: {:noreply, Mob.Socket.pop_screen(socket)}
 
+  # The PDF, a photo or an attachment had nowhere to open.
+  def handle_info({:viewer, :error, _json}, socket),
+    do: {:noreply, Native.toast(socket, "No app on this phone can open this file")}
+
   def handle_info(_message, socket), do: {:noreply, socket}
 
   # The decision goes to the server; the list reloads when it answers.

@@ -1058,6 +1058,10 @@ defmodule RisitiApp.Screens.ReceiptsScreen do
 
   def handle_info({:biometric, _failure}, socket), do: {:noreply, socket}
 
+  # The PDF, a photo or an attachment had nowhere to open.
+  def handle_info({:viewer, :error, _json}, socket),
+    do: {:noreply, Native.toast(socket, "No app on this phone can open this file")}
+
   def handle_info(_message, socket), do: {:noreply, socket}
 
   # Starts a KRA check for `receipt`. A check already running for it is
